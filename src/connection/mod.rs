@@ -1,6 +1,9 @@
+mod command;
 use serialport::{SerialPort, SerialPortInfo, SerialPortType, ClearBuffer};
 use log::{info, error};
 use std::io::{Read, Write, Result};
+use crate::connection::command::Command;
+
 
 pub const KNOWN_PORTS: &[(u16, u16)] = &[
     (0x0e8d, 0x0003), // Mediatek USB Port (BROM)
@@ -50,7 +53,7 @@ pub fn get_mtk_port_connection(serial_port: &SerialPortInfo) -> Option<Connectio
             }
         },
         _ => {
-            error!("Port is not a USB port");
+            error!("");
             return None;
         }
     };
@@ -93,6 +96,15 @@ impl Connection {
         }
     }
 
+
+    pub fn echo(&mut self, data: &[u8], size: usize) -> Result<()> {
+        self.port.write_all(data)?;
+        let mut buf = vec![0u8; size];
+        self.port.read_exact(&mut buf)?;
+        return self.check(&buf, data);
+    }
+
+
     pub fn handshake(&mut self) -> Result<()> {
         loop {
             self.port.write_all(&[0xA0])?;
@@ -117,4 +129,65 @@ impl Connection {
         println!("Handshake completed!");
         Ok(())
     }
+
+    pub fn jump_da(&mut self, address: u32) -> Result<()> {
+        println!("Jump to DA at 0x{:08X}", address);
+
+        self.echo(&[Command::JumpDa as u8], 1)?;
+        self.echo(&address.to_le_bytes(), 4)?;
+
+        let mut status = [0u8; 2];
+        self.port.read_exact(&mut status)?;
+
+        let status_val = u16::from_le_bytes(status);
+        if status_val != 0 {
+            error!("JumpDA failed with status: {:04X}", status_val);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "JumpDA failed").into());
+        }
+
+        Ok(())
+    }
+
+
+    pub fn get_hw_code(&mut self) -> Result<u32> {
+        self.echo(&[Command::GetHwCode as u8], 1)?;
+
+        let mut hw_code = [0u8; 2];
+        let mut status = [0u8; 2];
+
+        self.port.read_exact(&mut hw_code)?;
+        self.port.read_exact(&mut status)?;
+
+        let status_val = u16::from_le_bytes(status);
+        if status_val != 0 {
+            error!("GetHwCode failed with status: {:04X}", status_val);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "GetHwCode failed").into());
+        }
+
+        Ok(u16::from_le_bytes(hw_code) as u32)
+    }
+
+
+    pub fn get_soc_id(&mut self) -> Result<Vec<u8>> {
+        self.echo(&[Command::GetSocId as u8], 1)?;
+
+        let mut length_bytes = [0u8; 4];
+        self.port.read_exact(&mut length_bytes)?;
+        let length = u32::from_be_bytes(length_bytes) as usize;
+
+        let mut soc_id = vec![0u8; length];
+        self.port.read_exact(&mut soc_id)?;
+
+        let mut status_bytes = [0u8; 2];
+        self.port.read_exact(&mut status_bytes)?;
+        let status = u16::from_le_bytes(status_bytes);
+
+        if status != 0 {
+            error!("GetSocId failed with status: 0x{:04X}", status);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "GetSocId failed").into());
+        }
+
+        Ok(soc_id)
+    }
+
 }
