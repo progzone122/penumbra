@@ -16,7 +16,7 @@
     packages.${system}.default = naerskLib.buildPackage {
       src = ./.;
       cargoLock = ./Cargo.lock;
-      buildInputs = [pkgs.glib];
+      buildInputs = [pkgs.glib pkgs.systemd.dev];
       nativeBuildInputs = [pkgs.pkg-config];
     };
 
@@ -28,6 +28,8 @@
         clippy
         rust-analyzer
         glib
+
+        systemd.dev
       ];
 
       nativeBuildInputs = [pkgs.pkg-config];
