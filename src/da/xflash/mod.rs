@@ -3,6 +3,7 @@
     SPDX-FileCopyrightText: 2025 Shomy
 */
 mod cmds;
+pub mod flash;
 use crate::connection::Connection;
 use crate::da::xflash::cmds::*;
 use crate::da::{DAEntryRegion, DAProtocol, DA};
@@ -230,6 +231,14 @@ impl DAProtocol for XFlash {
         self.conn.port.flush()?;
 
         Ok(true)
+    }
+
+    fn read_flash(&mut self, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
+        flash::read_flash(self, addr, size)
+    }
+
+    fn write_flash(&mut self, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
+        flash::write_flash(self, addr, size, data)
     }
 }
 
