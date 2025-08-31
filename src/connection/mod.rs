@@ -1,9 +1,12 @@
+/*
+    SPDX-License-Identifier: AGPL-3.0-or-later
+    SPDX-FileCopyrightText: 2025 Shomy
+*/
 mod command;
-use serialport::{SerialPort, SerialPortInfo, SerialPortType, ClearBuffer};
-use log::{info, error};
-use std::io::{Read, Write, Result};
 use crate::connection::command::Command;
-
+use log::{error, info};
+use serialport::{ClearBuffer, SerialPort, SerialPortInfo, SerialPortType};
+use std::io::{Read, Result, Write};
 
 pub const KNOWN_PORTS: &[(u16, u16)] = &[
     (0x0e8d, 0x0003), // Mediatek USB Port (BROM)
@@ -26,11 +29,12 @@ pub struct Connection {
 
 pub fn find_mtk_port() -> Vec<SerialPortInfo> {
     match serialport::available_ports() {
-        Ok(ports) => ports.into_iter()
+        Ok(ports) => ports
+            .into_iter()
             .filter(|p| match &p.port_type {
-                SerialPortType::UsbPort(usb_info) => {
-                    KNOWN_PORTS.iter().any(|(vid, pid)| usb_info.vid == *vid && usb_info.pid == *pid)
-                },
+                SerialPortType::UsbPort(usb_info) => KNOWN_PORTS
+                    .iter()
+                    .any(|(vid, pid)| usb_info.vid == *vid && usb_info.pid == *pid),
                 _ => false,
             })
             .collect(),
@@ -48,7 +52,10 @@ pub fn get_mtk_port_connection(serial_port: &SerialPortInfo) -> Option<Connectio
             (0x0e8d, 0x2000) => ConnectionType::Preloader,
             (0x0e8d, 0x2001) => ConnectionType::Da,
             _ => {
-                error!("Unknown MTK port type: {:04x}:{:04x}", usb_info.vid, usb_info.pid);
+                error!(
+                    "Unknown MTK port type: {:04x}:{:04x}",
+                    usb_info.vid, usb_info.pid
+                );
                 return None;
             }
         },
@@ -91,11 +98,16 @@ impl Connection {
         if data == expected_data {
             Ok(())
         } else {
-            error!("Data mismatch. Expected: {:x?}, Got: {:x?}", expected_data, data);
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "Data mismatch"))
+            error!(
+                "Data mismatch. Expected: {:x?}, Got: {:x?}",
+                expected_data, data
+            );
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Data mismatch",
+            ))
         }
     }
-
 
     pub fn echo(&mut self, data: &[u8], size: usize) -> Result<()> {
         self.port.write_all(data)?;
@@ -103,7 +115,6 @@ impl Connection {
         self.port.read_exact(&mut buf)?;
         return self.check(&buf, data);
     }
-
 
     pub fn handshake(&mut self) -> Result<()> {
         loop {
@@ -148,6 +159,58 @@ impl Connection {
         Ok(())
     }
 
+    pub fn send_da(
+        &mut self,
+        da_data: &[u8],
+        da_len: u32,
+        address: u32,
+        sig_len: u32,
+    ) -> Result<()> {
+        println!("Sending DA, size: {}", da_data.len());
+        self.echo(&[Command::SendDa as u8], 1)?;
+        self.echo(&address.to_be_bytes(), 4)?;
+        self.echo(&(da_len).to_be_bytes(), 4)?;
+        self.echo(&sig_len.to_be_bytes(), 4)?;
+
+        let mut status = [0u8; 2];
+        self.port.read_exact(&mut status)?;
+        let status_val = u16::from_be_bytes(status);
+        println!("Received status: 0x{:04X}", status_val);
+
+        if status_val != 0 {
+            error!("SendDA command failed with status: {:04X}", status_val);
+            return Err(
+                std::io::Error::new(std::io::ErrorKind::Other, "SendDA command failed").into(),
+            );
+        }
+
+        self.port.write_all(da_data)?;
+
+        println!("Data transfer complete.");
+
+        let mut checksum = [0u8; 2];
+        self.port.read_exact(&mut checksum)?;
+        println!("Received checksum: {:02X}{:02X}", checksum[0], checksum[1]);
+
+        let mut status = [0u8; 2];
+        self.port.read_exact(&mut status)?;
+
+        let status_val = u16::from_be_bytes(status);
+        println!("Received final status: 0x{:04X}", status_val);
+        if status_val != 0 {
+            error!(
+                "SendDA data transfer failed with status: {:04X}",
+                status_val
+            );
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "SendDA data transfer failed",
+            )
+            .into());
+        }
+
+        Ok(())
+    }
 
     pub fn get_hw_code(&mut self) -> Result<u32> {
         self.echo(&[Command::GetHwCode as u8], 1)?;
@@ -167,6 +230,33 @@ impl Connection {
         Ok(u16::from_le_bytes(hw_code) as u32)
     }
 
+    pub fn get_hw_sw_ver(&mut self) -> Result<(u16, u16, u16)> {
+        self.echo(&[Command::GetHwSwVer as u8], 1)?;
+
+        let mut hw_sub_code = [0u8; 2];
+        let mut hw_ver = [0u8; 2];
+        let mut sw_ver = [0u8; 2];
+        let mut status = [0u8; 2];
+
+        self.port.read_exact(&mut hw_sub_code)?;
+        self.port.read_exact(&mut hw_ver)?;
+        self.port.read_exact(&mut sw_ver)?;
+        self.port.read_exact(&mut status)?;
+
+        let status_val = u16::from_le_bytes(status);
+        if status_val != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Status is 0x{:04X}", status_val),
+            ));
+        }
+
+        Ok((
+            u16::from_le_bytes(hw_sub_code),
+            u16::from_le_bytes(hw_ver),
+            u16::from_le_bytes(sw_ver),
+        ))
+    }
 
     pub fn get_soc_id(&mut self) -> Result<Vec<u8>> {
         self.echo(&[Command::GetSocId as u8], 1)?;
@@ -189,5 +279,4 @@ impl Connection {
 
         Ok(soc_id)
     }
-
 }
