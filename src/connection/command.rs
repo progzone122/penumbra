@@ -1,8 +1,14 @@
+/*
+    SPDX-License-Identifier: MIT
+    SPDX-FileCopyrightText: 2025 Roger Ortiz <me@r0rt1z2.com>
+
+    Derived from:
+    https://github.com/R0rt1z2/moto-experiments/blob/main/src/commands.py
+*/
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     // Commands used by the Preloader / BROM protocol
-    // Taken from https://github.com/R0rt1z2/moto-experiments/blob/main/src/commands.py
 
     GetHwSwVer = 0xFC,
     GetHwCode = 0xFD,

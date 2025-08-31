@@ -1,6 +1,6 @@
 /*
     SPDX-License-Identifier: AGPL-3.0-or-later
-    Copyright (C) 2025 Shomy
+    SPDX-FileCopyrightText: 2025 Shomy
 */
 use std::path::Path;
 
