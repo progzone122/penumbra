@@ -119,26 +119,27 @@ impl DAProtocol for XFlash {
         self.conn.port.flush()?;
         debug!("[TX] Completed sending {} bytes", data.len());
 
-        let status_result = self.get_status();
+        self.conn.port.set_timeout(Duration::from_millis(500))?;
 
-        match status_result {
-            Ok(status) => {
-                if status == 0 || status == Cmd::SyncSignal as u32 {
-                    info!("[BOOT_TO] Successfully booted to DA2");
-                    Ok(true)
-                } else {
-                    error!("[BOOT_TO] Boot failed with status: 0x{:08X}", status);
-                    Err(Error::new(
-                        ErrorKind::Other,
-                        format!("Boot failed: 0x{:08X}", status),
-                    ))
-                }
-            }
-            Err(e) => Err(Error::new(
+        let status = self.get_status()?;
+        if status != 0 {
+            return Err(Error::new(
                 ErrorKind::Other,
-                format!("Failed to read final status: {}", e),
-            )),
+                format!("BOOT_TO status1 is not 0: 0x{:08X}", status),
+            ));
         }
+
+        // It needs to receive the SYNC signal as well
+        let status = self.get_status()?;
+        if status != Cmd::SyncSignal as u32 {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("BOOT_TO status2 is not SYNC: 0x{:08X}", status),
+            ));
+        }
+
+        info!("[Penumbra] Successfully booted to DA2");
+        Ok(true)
     }
 
     fn send_data(&mut self, data: &[u8]) -> Result<bool, Error> {
