@@ -106,6 +106,13 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
 pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
     info!("Writing flash at address {:#X} with size {:#X}", addr, data.len());
 
+    // Note to self: 
+    // Next time, don't put this after Cmd::WriteData,
+    // or don't expect it to work :/
+    let chunk_size = get_write_packet_length(xflash)?;
+    // let chunk_size = 0x2000;
+    info!("Using chunk size of {} bytes", chunk_size);
+
     // It is mandatory to make data size the same as size, or we will be leaving
     // older data in the partition. Usually, this is not an issue for partitions
     // with an header, like LK (which stores the start and length of the lk image),
@@ -152,8 +159,7 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     debug!("Parameters sent!");
     let mut bytes_written = 0;
     let mut pos = 0;
-    // TODO: Use Cmd::GetPacketLength to determine chunk size for compatibility
-    let chunk_size = 0x2000; // 8096 bytes
+
 
     debug!("Starting to write data in chunks of {} bytes...", chunk_size);
     loop {
@@ -200,4 +206,46 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     info!("Flash write completed, {} bytes written.", bytes_written);
 
     Ok(())
+}
+
+fn get_packet_length(xflash: &mut XFlash) -> Result<(usize, usize), Error> {
+    let packet_length = xflash.devctrl(Cmd::GetPacketLength, None)?;
+    let status = xflash.get_status()?;
+    if status != 0 {
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!("Device returned error status: {:#X}", status),
+        ));
+    }
+
+    if packet_length.len() < 8 {
+        return Err(Error::new(
+            ErrorKind::Other,
+            "Received packet length is too short",
+        ));
+    }
+
+    // TODO: Find a better way of doing this, currently, this is bad
+    let mut write_buf = [0u8; 4];
+    let mut read_buf = [0u8; 4];
+    
+    write_buf.copy_from_slice(&packet_length[0..4]);
+    read_buf.copy_from_slice(&packet_length[4..8]);
+    
+    let write_len = u32::from_le_bytes(write_buf) as usize;
+    let read_len = u32::from_le_bytes(read_buf) as usize;
+    
+    Ok((write_len, read_len))
+}
+
+
+fn get_write_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
+    let (write_len, _) = get_packet_length(xflash)?;
+    Ok(write_len)
+}
+
+
+fn get_read_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
+    let (_, read_len) = get_packet_length(xflash)?;
+    Ok(read_len)
 }
