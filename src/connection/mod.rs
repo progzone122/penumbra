@@ -279,4 +279,26 @@ impl Connection {
 
         Ok(soc_id)
     }
+
+    pub fn get_meid(&mut self) -> Result<Vec<u8>> {
+        self.echo(&[Command::GetMeId as u8], 1)?;
+
+        let mut length_bytes = [0u8; 4];
+        self.port.read_exact(&mut length_bytes)?;
+        let length = u32::from_be_bytes(length_bytes) as usize;
+
+        let mut meid = vec![0u8; length];
+        self.port.read_exact(&mut meid)?;
+
+        let mut status_bytes = [0u8; 2];
+        self.port.read_exact(&mut status_bytes)?;
+        let status = u16::from_le_bytes(status_bytes);
+
+        if status != 0 {
+            error!("GetMeid failed with status: 0x{:04X}", status);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "GetMeid failed").into());
+        }
+
+        Ok(meid)
+    }
 }
