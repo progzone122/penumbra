@@ -8,5 +8,6 @@ pub mod xflash;
 pub use da::DAEntryRegion;
 pub use da::DAFile;
 pub use da::DA;
+pub use da::DAType;
 pub use protocol::DAProtocol;
 pub use xflash::XFlash;

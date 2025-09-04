@@ -3,6 +3,7 @@
     SPDX-FileCopyrightText: 2025 Shomy
 */
 use std::path::Path;
+use std::io::Error;
 
 #[derive(Debug, Clone)]
 pub enum DAType {
@@ -38,7 +39,7 @@ pub struct DAFile {
 }
 
 impl DAFile {
-    pub fn parse_da(raw_data: &[u8]) -> Result<DAFile, Box<dyn std::error::Error>> {
+    pub fn parse_da(raw_data: &[u8]) -> Result<DAFile, Error> {
         let hdr = &raw_data[..0x6C];
 
         let da_type = if &hdr[0..2] == b"\xDA\xDA" {
@@ -141,14 +142,14 @@ impl DAFile {
         })
     }
 
-    pub fn get_da_from_hw_code(&self, hw_code: u16, hw_sub_code: u16) -> Option<&DA> {
-        for da in &self.das {
-            return Some(da);
-            // if da.hw_code == hw_code && da.hw_sub_code == hw_sub_code {
-            //     return Some(da);
-            // }
-        }
-        None
+    // TODO: Make an Hashmap, possibly also including other info about a chip
+    pub fn get_da_from_hw_code(&self, hw_code: u16) -> Option<&DA> {
+        let da_code  = match hw_code {
+            0x0707 => 0x6768,
+            _ => return None,
+        };
+
+        self.das.iter().find(|da| da.hw_code == da_code)
     }
 }
 

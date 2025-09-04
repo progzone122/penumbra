@@ -79,9 +79,12 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
         ack_hdr[4..8].copy_from_slice(&(DataType::ProtocolFlow as u32).to_le_bytes());
         ack_hdr[8..12].copy_from_slice(&4u32.to_le_bytes());
         let ack_payload = [0u8; 4];
-        xflash.conn.port.write_all(&ack_hdr)?;
-        xflash.conn.port.write_all(&ack_payload)?;
-        xflash.conn.port.flush()?;
+        {
+            let mut conn = xflash.conn.borrow_mut();
+            conn.port.write_all(&ack_hdr)?;
+            conn.port.write_all(&ack_payload)?;
+            conn.port.flush()?;
+        }
 
         let status = xflash.get_status()?;
         debug!("Status after chunk: 0x{:08X}", status);
