@@ -4,7 +4,7 @@
 */
 mod command;
 use crate::connection::command::Command;
-use log::{error, info};
+use log::{error, info, debug};
 use serialport::{ClearBuffer, SerialPort, SerialPortInfo, SerialPortType};
 use std::io::{Read, Result, Write};
 
@@ -14,13 +14,14 @@ pub const KNOWN_PORTS: &[(u16, u16)] = &[
     (0x0e8d, 0x2001), // Mediatek USB Port (DA)
 ];
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ConnectionType {
     Brom,
     Preloader,
     Da,
 }
 
+#[derive(Debug)]
 pub struct Connection {
     pub port: Box<dyn SerialPort>,
     pub connection_type: ConnectionType,
@@ -64,7 +65,7 @@ pub fn get_mtk_port_connection(serial_port: &SerialPortInfo) -> Option<Connectio
             return None;
         }
     };
-
+    debug!("Detected connection type: {:?}", connection_type);
     let baudrate: u32 = match connection_type {
         ConnectionType::Brom => 115_200,
         ConnectionType::Preloader | ConnectionType::Da => 921_600,
@@ -75,7 +76,7 @@ pub fn get_mtk_port_connection(serial_port: &SerialPortInfo) -> Option<Connectio
         .open()
         .ok()?;
 
-    println!(
+    info!(
         "Opened MTK port: {} with baudrate {}",
         serial_port.port_name, baudrate
     );
@@ -137,12 +138,12 @@ impl Connection {
         let third_response = self.write(&[0x05], 1)?;
         self.check(&third_response, &[0xFA])?;
 
-        println!("Handshake completed!");
+        info!("Handshake completed!");
         Ok(())
     }
 
     pub fn jump_da(&mut self, address: u32) -> Result<()> {
-        println!("Jump to DA at 0x{:08X}", address);
+        debug!("Jump to DA at 0x{:08X}", address);
 
         self.echo(&[Command::JumpDa as u8], 1)?;
         self.echo(&address.to_le_bytes(), 4)?;
@@ -166,7 +167,7 @@ impl Connection {
         address: u32,
         sig_len: u32,
     ) -> Result<()> {
-        println!("Sending DA, size: {}", da_data.len());
+        debug!("Sending DA, size: {}", da_data.len());
         self.echo(&[Command::SendDa as u8], 1)?;
         self.echo(&address.to_be_bytes(), 4)?;
         self.echo(&(da_len).to_be_bytes(), 4)?;
@@ -175,7 +176,7 @@ impl Connection {
         let mut status = [0u8; 2];
         self.port.read_exact(&mut status)?;
         let status_val = u16::from_be_bytes(status);
-        println!("Received status: 0x{:04X}", status_val);
+        debug!("Received status: 0x{:04X}", status_val);
 
         if status_val != 0 {
             error!("SendDA command failed with status: {:04X}", status_val);
@@ -186,17 +187,17 @@ impl Connection {
 
         self.port.write_all(da_data)?;
 
-        println!("Data transfer complete.");
+        debug!("DA sent!");
 
         let mut checksum = [0u8; 2];
         self.port.read_exact(&mut checksum)?;
-        println!("Received checksum: {:02X}{:02X}", checksum[0], checksum[1]);
+        debug!("Received checksum: {:02X}{:02X}", checksum[0], checksum[1]);
 
         let mut status = [0u8; 2];
         self.port.read_exact(&mut status)?;
 
         let status_val = u16::from_be_bytes(status);
-        println!("Received final status: 0x{:04X}", status_val);
+        debug!("Received final status: 0x{:04X}", status_val);
         if status_val != 0 {
             error!(
                 "SendDA data transfer failed with status: {:04X}",
