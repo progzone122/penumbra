@@ -5,6 +5,7 @@
 mod cmds;
 pub mod flash;
 use crate::connection::Connection;
+use crate::connection::ConnectionType;
 use crate::da::xflash::cmds::*;
 use crate::da::{DAEntryRegion, DAProtocol, DA};
 use crate::exploit::carbonara::Carbonara;
@@ -258,6 +259,50 @@ impl DAProtocol for XFlash {
 
     fn write_flash(&mut self, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
         flash::write_flash(self, addr, size, data)
+    }
+
+
+    fn get_usb_speed(&mut self) -> Result<u32, Error> {
+        let usb_speed = self.devctrl(Cmd::GetUsbSpeed, None)?;
+        let status = self.get_status()?;
+        if status != 0 {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Device returned error status: {:#X}", status),
+            ));
+        }
+        debug!("USB Speed Data: {:?}", usb_speed);
+        Ok(u32::from_le_bytes(usb_speed[0..4].try_into().unwrap()))
+    }
+
+    fn get_connection(&self) -> &Connection {
+        &self.conn
+    }
+
+    fn set_connection_type(&mut self, conn_type: ConnectionType) -> Result<(), Error> {
+        self.conn.connection_type = conn_type;
+        Ok(())
+    }
+
+    fn read32(&mut self, addr: u32) -> Result<u32, Error> {
+        println!("Reading 32-bit register at address 0x{:08X}", addr);
+        let param = addr.to_le_bytes();
+        let resp = self.devctrl(Cmd::DeviceCtrlReadRegister, Some(&param))?;
+        debug!("[RX] Read Register Response: {:02X?}", resp);
+        if resp.len() < 4 {
+            debug!("Short read: expected 4 bytes, got {}", resp.len());
+            return Err(Error::new(std::io::ErrorKind::Other, "Short register read"));
+        }
+        Ok(u32::from_le_bytes(resp[0..4].try_into().unwrap()))
+    }
+
+    fn write32(&mut self, addr: u32, value: u32) -> Result<(), Error> {
+        let mut param = Vec::new();
+        param.extend_from_slice(&addr.to_le_bytes());
+        param.extend_from_slice(&value.to_le_bytes());
+        debug!("[TX] Writing 32-bit value 0x{:08X} to address 0x{:08X}", value, addr);
+        self.devctrl(Cmd::SetRegisterValue, Some(&param))?;
+        Ok(())
     }
 }
 
