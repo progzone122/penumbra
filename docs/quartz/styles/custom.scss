@@ -1,0 +1,55 @@
+@use "./base.scss";
+
+// put your custom CSS here!
+a {
+    color: var(--highlight);
+    text-decoration: none;
+    transition: color 0.2s ease;
+
+    &:hover {
+        color: var(--highlight);
+    }
+
+    &.internal {
+        background-color: transparent; // removes pill
+        color: var(--highlight); // keep consistent text color
+        padding: 0; // remove pill spacing
+        border-radius: 0; // remove pill shape
+        font-weight: 500;
+
+        &:hover {
+            color: var(--tertiary); // soft warm hover color
+        }
+
+        &.broken {
+            color: var(--gray);
+            opacity: 0.5;
+
+            &:hover {
+                opacity: 0.8;
+            }
+        }
+
+        &:has(> img) {
+            background-color: transparent;
+            padding: 0;
+            border-radius: 0;
+        }
+
+        &.tag-link::before {
+            content: "#";
+        }
+    }
+
+    &.external .external-icon path {
+        fill: var(--dark);
+    }
+}
+
+
+code {
+    font-size: 0.9em;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    background-color: var(--card);
+}

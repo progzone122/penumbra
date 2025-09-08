@@ -25,3 +25,19 @@ target
 
 /target
 /logs
+
+# Documentation
+docs/.DS_Store
+docs/.gitignore
+docs/node_modules
+docs/public
+docs/prof
+docs/tsconfig.tsbuildinfo
+docs/.obsidian
+docs/.quartz-cache
+docs/quartz/.quartz-cache
+docs/private/
+docs/.replit
+docs/replit.nix
+/docs/content/.obsidian
+/docs/content/.trash
