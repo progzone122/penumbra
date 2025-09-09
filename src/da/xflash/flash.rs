@@ -2,33 +2,30 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025 Shomy
 */
-use crate::connection::Connection;
 use crate::da::xflash::cmds::*;
 use crate::da::xflash::XFlash;
-use crate::da::{DAProtocol, DA};
+use crate::da::DAProtocol;
 use log::{debug, info};
-use std::io::{Error, ErrorKind, Read, Write};
-
-
+use std::io::{Error, ErrorKind, Write};
 
 pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
     info!("Reading flash at address {:#X} with size {:#X}", addr, size);
-    
-    // Format: 
+
+    // Format:
     // Storage Type (EMMC, UFS, NAND) u32
     // PartType u32 (BOOT or USER for EMMC)
     // Address u32
     // Size u32
     // Nand Specific
     //
-    // 01000000 u32 
+    // 01000000 u32
     // 08000000 u32
     // 0000000000000000 u64
     // 4400000000000000 u64
     // 0000000000000000000000000000000000000000000000000000000000000000 8u32
     // The payload above is sent when reading PGPT (addr: 0x0, size: 0x44)
     let storage_type = 1u32; // TODO: Add support for other storage types
-    let partition_type = 8u32;// USER partition
+    let partition_type = 8u32; // USER partition
     let nand_ext = [0u32; 8]; // Nand specific, set to 0 for non-nand storage types
 
     let mut param = Vec::new();
@@ -37,9 +34,14 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
     param.extend_from_slice(&addr.to_le_bytes());
     param.extend_from_slice(&(size as u64).to_le_bytes());
     // Which basically means: append it! Improvements are welcome.
-    param.extend_from_slice(&nand_ext.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>());
+    param.extend_from_slice(
+        &nand_ext
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect::<Vec<u8>>(),
+    );
 
-    xflash.send_cmd(Cmd::ReadData);
+    xflash.send_cmd(Cmd::ReadData)?;
 
     let status = xflash.get_status()?;
     if status != 0 {
@@ -55,7 +57,10 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("Device returned error status after sending parameters: {:#X}", status),
+            format!(
+                "Device returned error status after sending parameters: {:#X}",
+                status
+            ),
         ));
     }
 
@@ -72,18 +77,17 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
         buffer.extend_from_slice(&chunk);
         bytes_read += chunk.len();
 
-        // As always, header + payload. 
+        // As always, header + payload.
         // TODO: Consider using self.send() for this.
         let mut ack_hdr = [0u8; 12];
         ack_hdr[0..4].copy_from_slice(&(Cmd::Magic as u32).to_le_bytes());
         ack_hdr[4..8].copy_from_slice(&(DataType::ProtocolFlow as u32).to_le_bytes());
         ack_hdr[8..12].copy_from_slice(&4u32.to_le_bytes());
         let ack_payload = [0u8; 4];
-        
+
         xflash.conn.port.write_all(&ack_hdr)?;
         xflash.conn.port.write_all(&ack_payload)?;
         xflash.conn.port.flush()?;
-    
 
         let status = xflash.get_status()?;
         debug!("Status after chunk: 0x{:08X}", status);
@@ -99,16 +103,18 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
         debug!("Read {}/{} bytes...", bytes_read, size);
     }
 
-
     Ok(buffer)
 }
 
-
 // TODO: Actually verify if the partition allows writing data.len() bytes
 pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
-    info!("Writing flash at address {:#X} with size {:#X}", addr, data.len());
+    info!(
+        "Writing flash at address {:#X} with size {:#X}",
+        addr,
+        data.len()
+    );
 
-    // Note to self: 
+    // Note to self:
     // Next time, don't put this after Cmd::WriteData,
     // or don't expect it to work :/
     let chunk_size = get_write_packet_length(xflash)?;
@@ -125,11 +131,16 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     actual_data.extend_from_slice(data);
     if actual_data.len() < size {
         actual_data.resize(size, 0);
-        debug!("Data to write at {:#X} was smaller than size, padding with zeros.", addr);
-    }
-    else if actual_data.len() > size {
+        debug!(
+            "Data to write at {:#X} was smaller than size, padding with zeros.",
+            addr
+        );
+    } else if actual_data.len() > size {
         actual_data.truncate(size);
-        debug!("Data to write at {:#X} was larger than size, truncating.", addr);
+        debug!(
+            "Data to write at {:#X} was larger than size, truncating.",
+            addr
+        );
     }
 
     let storage_type = 1u32; // TODO: Add support for other storage types
@@ -140,7 +151,12 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     param.extend_from_slice(&partition_type.to_le_bytes());
     param.extend_from_slice(&addr.to_le_bytes());
     param.extend_from_slice(&(size as u64).to_le_bytes());
-    param.extend_from_slice(&nand_ext.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>());
+    param.extend_from_slice(
+        &nand_ext
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect::<Vec<u8>>(),
+    );
 
     debug!("Sending write data cmd!");
     // TODO: Consider making a send_cmd_with_payload function
@@ -157,13 +173,15 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     // Note to self: send_data already checks the status, so DON'T check it again!!
     // Also, perhaps make it return the status DUH!
     xflash.send_data(&param)?;
- 
+
     debug!("Parameters sent!");
     let mut bytes_written = 0;
     let mut pos = 0;
 
-
-    debug!("Starting to write data in chunks of {} bytes...", chunk_size);
+    debug!(
+        "Starting to write data in chunks of {} bytes...",
+        chunk_size
+    );
     loop {
         if pos >= actual_data.len() {
             break;
@@ -201,7 +219,10 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("Device returned error status after writing data: {:#X}", status),
+            format!(
+                "Device returned error status after writing data: {:#X}",
+                status
+            ),
         ));
     }
 
@@ -230,22 +251,20 @@ fn get_packet_length(xflash: &mut XFlash) -> Result<(usize, usize), Error> {
     // TODO: Find a better way of doing this, currently, this is bad
     let mut write_buf = [0u8; 4];
     let mut read_buf = [0u8; 4];
-    
+
     write_buf.copy_from_slice(&packet_length[0..4]);
     read_buf.copy_from_slice(&packet_length[4..8]);
-    
+
     let write_len = u32::from_le_bytes(write_buf) as usize;
     let read_len = u32::from_le_bytes(read_buf) as usize;
-    
+
     Ok((write_len, read_len))
 }
-
 
 fn get_write_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
     let (write_len, _) = get_packet_length(xflash)?;
     Ok(write_len)
 }
-
 
 fn get_read_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
     let (_, read_len) = get_packet_length(xflash)?;

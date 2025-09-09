@@ -9,7 +9,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     // Commands used by the Preloader / BROM protocol
-
     GetHwSwVer = 0xFC,
     GetHwCode = 0xFD,
     GetPlVer = 0xFE,

@@ -4,7 +4,7 @@
 */
 mod command;
 use crate::connection::command::Command;
-use log::{error, info, debug};
+use log::{debug, error, info};
 use serialport::{ClearBuffer, SerialPort, SerialPortInfo, SerialPortType};
 use std::io::{Read, Result, Write};
 

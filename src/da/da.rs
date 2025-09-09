@@ -2,8 +2,8 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025 Shomy
 */
-use std::path::Path;
 use std::io::Error;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub enum DAType {
@@ -12,7 +12,7 @@ pub enum DAType {
     V6,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DAEntryRegion {
     pub data: Vec<u8>,      // Raw data of the region, including signature if any
     pub offset: u32,        // Offset within the file itself, where the region starts
@@ -22,7 +22,7 @@ pub struct DAEntryRegion {
     pub sig_len: u32,       // Length of the signature, if any
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DA {
     pub da_type: DAType,
     pub regions: Vec<DAEntryRegion>,
@@ -74,7 +74,6 @@ impl DAFile {
             let hw_code = u16::from_le_bytes(da_entry[0x02..0x04].try_into().unwrap());
             let hw_sub_code = u16::from_le_bytes(da_entry[0x04..0x06].try_into().unwrap());
             let hw_version = u16::from_le_bytes(da_entry[0x06..0x08].try_into().unwrap());
-
             let mut regions: Vec<DAEntryRegion> = Vec::new();
             let region_count = u16::from_le_bytes(da_entry[0x12..0x14].try_into().unwrap());
             // Structure of the DA header entry
@@ -144,7 +143,7 @@ impl DAFile {
 
     // TODO: Make an Hashmap, possibly also including other info about a chip
     pub fn get_da_from_hw_code(&self, hw_code: u16) -> Option<DA> {
-        let da_code  = match hw_code {
+        let da_code = match hw_code {
             0x0707 => 0x6768,
             _ => return None,
         };
