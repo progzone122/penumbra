@@ -3,24 +3,27 @@
     SPDX-FileCopyrightText: 2025 Shomy
 */
 mod cmds;
+mod exts;
 pub mod flash;
 use crate::connection::Connection;
 use crate::connection::ConnectionType;
+use crate::core::device::DeviceInfo;
 use crate::da::xflash::cmds::*;
-use crate::da::{DAEntryRegion, DAProtocol, DA};
+use crate::da::xflash::exts::{boot_extensions, read32_ext, write32_ext};
+use crate::da::{DAProtocol, DA};
 use crate::exploit::carbonara::Carbonara;
 use crate::exploit::Exploit;
-use crate::core::device::DeviceInfo;
-use log::{debug, error, info, warn};
-use std::io::{Error, ErrorKind, Read, Write};
-use std::time::Duration;
-use std::rc::Rc;
+use log::{debug, info, warn};
 use std::cell::RefCell;
+use std::io::{Error, ErrorKind, Read, Write};
+use std::rc::Rc;
+use std::time::Duration;
 
 pub struct XFlash {
     pub conn: Connection,
     pub da: DA,
     pub dev_info: Rc<RefCell<DeviceInfo>>,
+    using_exts: bool,
 }
 
 impl DAProtocol for XFlash {
@@ -31,7 +34,7 @@ impl DAProtocol for XFlash {
         };
 
         self.upload_stage1(da1addr, da1length, da1data, da1sig_len)
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to upload DA1: {}", e)));
+            .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to upload DA1: {}", e)))?;
 
         let da2 = match self.da.get_da2() {
             Some(da2) => da2.clone(),
@@ -44,20 +47,17 @@ impl DAProtocol for XFlash {
         let mut carbonara = Carbonara::new(carbonara_da, self as &mut dyn DAProtocol);
 
         let da2data = match Exploit::run(&mut carbonara) {
-            Ok(_) => {
-                match carbonara.get_patched_da2() {
-                    Some(patched_da2) => patched_da2.data.clone(),
-                    None => {
-                        da2.data
-                    }
-                }
+            Ok(_) => match carbonara.get_patched_da2() {
+                Some(patched_da2) => patched_da2.data.clone(),
+                None => da2.data,
             },
-            Err(e) => { da2.data}
+            Err(_) => da2.data,
         };
 
         match self.boot_to(da2addr, &da2data) {
             Ok(true) => {
                 info!("[Penumbra] Successfully uploaded and executed DA2");
+                self.boot_extensions()?;
                 Ok(true)
             }
             Ok(false) => Err(Error::new(ErrorKind::Other, "Failed to execute DA2")),
@@ -104,11 +104,10 @@ impl DAProtocol for XFlash {
             hdr,
             param.len()
         );
-        
+
         self.conn.port.write_all(&hdr)?;
         self.conn.port.write_all(&param)?;
         self.conn.port.flush()?;
-        
 
         // We just need to change the data size,
         // so let us just reuse what we've got already ;P
@@ -119,7 +118,6 @@ impl DAProtocol for XFlash {
             data.len()
         );
 
-        
         self.conn.port.write_all(&hdr)?;
 
         // Chunks of 1KB
@@ -139,7 +137,6 @@ impl DAProtocol for XFlash {
         debug!("[TX] Completed sending {} bytes", data.len());
 
         self.conn.port.set_timeout(Duration::from_millis(500))?;
-        
 
         let status = self.get_status()?;
         if status != 0 {
@@ -151,7 +148,7 @@ impl DAProtocol for XFlash {
 
         // It needs to receive the SYNC signal as well
         let status = self.get_status()?;
-        if status != Cmd::SyncSignal as u32 {
+        if status != Cmd::SyncSignal as u32 && status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
                 format!("BOOT_TO status2 is not SYNC: 0x{:08X}", status),
@@ -261,7 +258,6 @@ impl DAProtocol for XFlash {
         flash::write_flash(self, addr, size, data)
     }
 
-
     fn get_usb_speed(&mut self) -> Result<u32, Error> {
         let usb_speed = self.devctrl(Cmd::GetUsbSpeed, None)?;
         let status = self.get_status()?;
@@ -285,6 +281,9 @@ impl DAProtocol for XFlash {
     }
 
     fn read32(&mut self, addr: u32) -> Result<u32, Error> {
+        if self.using_exts {
+            return read32_ext(self, addr);
+        }
         println!("Reading 32-bit register at address 0x{:08X}", addr);
         let param = addr.to_le_bytes();
         let resp = self.devctrl(Cmd::DeviceCtrlReadRegister, Some(&param))?;
@@ -297,10 +296,16 @@ impl DAProtocol for XFlash {
     }
 
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), Error> {
+        if self.using_exts {
+            return write32_ext(self, addr, value);
+        }
         let mut param = Vec::new();
         param.extend_from_slice(&addr.to_le_bytes());
         param.extend_from_slice(&value.to_le_bytes());
-        debug!("[TX] Writing 32-bit value 0x{:08X} to address 0x{:08X}", value, addr);
+        debug!(
+            "[TX] Writing 32-bit value 0x{:08X} to address 0x{:08X}",
+            value, addr
+        );
         self.devctrl(Cmd::SetRegisterValue, Some(&param))?;
         Ok(())
     }
@@ -312,7 +317,12 @@ impl XFlash {
     }
 
     pub fn new(conn: Connection, da: DA, dev_info: Rc<RefCell<DeviceInfo>>) -> Self {
-        XFlash { conn, da, dev_info }
+        XFlash {
+            conn,
+            da,
+            dev_info,
+            using_exts: false,
+        }
     }
 
     fn devctrl(&mut self, cmd: Cmd, param: Option<&[u8]>) -> Result<Vec<u8>, Error> {
@@ -378,7 +388,6 @@ impl XFlash {
             addr, length
         );
 
-    
         self.conn.send_da(&data, length, addr, sig_len)?;
         info!("[Penumbra] Sent DA1, jumping to address 0x{:08X}...", addr);
         self.conn.jump_da(addr)?;
@@ -406,7 +415,6 @@ impl XFlash {
             return Err(Error::new(ErrorKind::Other, "Incorrect sync byte received"));
         }
 
-
         self.send_cmd(Cmd::SyncSignal)?;
         self.send_cmd(Cmd::SetupEnvironment)?;
 
@@ -425,7 +433,7 @@ impl XFlash {
         let (magic, dtype, len) = {
             let mut sync_hdr = [0u8; 12];
             match self.conn.port.read_exact(&mut sync_hdr) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     return Err(Error::new(
                         ErrorKind::Other,
@@ -437,7 +445,7 @@ impl XFlash {
             (
                 u32::from_le_bytes(sync_hdr[0..4].try_into().unwrap()),
                 u32::from_le_bytes(sync_hdr[4..8].try_into().unwrap()),
-                u32::from_le_bytes(sync_hdr[8..12].try_into().unwrap())
+                u32::from_le_bytes(sync_hdr[8..12].try_into().unwrap()),
             )
         };
 
@@ -448,7 +456,7 @@ impl XFlash {
         let sync_signal_value = {
             let mut sync_signal_buf = [0u8; 4];
             match self.conn.port.read_exact(&mut sync_signal_buf) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     return Err(Error::new(
                         ErrorKind::Other,
@@ -467,6 +475,18 @@ impl XFlash {
         }
 
         info!("[Penumbra] Received DA1 sync signal.");
+        Ok(true)
+    }
+
+    fn boot_extensions(&mut self) -> Result<bool, Error> {
+        if self.using_exts {
+            warn!("DA extensions already in use, skipping re-upload");
+            return Ok(true);
+        }
+        info!("Booting DA extensions...");
+        boot_extensions(self)?;
+
+        self.using_exts = true;
         Ok(true)
     }
 }
