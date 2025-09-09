@@ -3,7 +3,7 @@
     SPDX-FileCopyrightText: 2025 Shomy
 */
 use std::io::Error;
-use std::path::Path;
+use log::debug;
 
 #[derive(Debug, Clone)]
 pub enum DAType {
@@ -105,7 +105,7 @@ impl DAFile {
                     u32::from_le_bytes(region_header_data[0x10..0x14].try_into().unwrap());
                 let region_data: Vec<u8> =
                     raw_data[offset as usize..(offset + length) as usize].to_vec();
-                println!(
+                debug!(
                     "Region: offset={:08X}, length={:08X}, addr={:08X}, sig_len={:08X}",
                     offset, length, addr, sig_len
                 );
@@ -127,7 +127,7 @@ impl DAFile {
                 hw_code,
                 hw_sub_code,
             });
-            println!(
+            debug!(
                 "Parsed DA entry: hw_code={:04X}, hw_sub_code={:04X}, regions={}",
                 hw_code, hw_sub_code, region_count
             );

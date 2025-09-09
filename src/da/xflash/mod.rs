@@ -284,7 +284,7 @@ impl DAProtocol for XFlash {
         if self.using_exts {
             return read32_ext(self, addr);
         }
-        println!("Reading 32-bit register at address 0x{:08X}", addr);
+        debug!("Reading 32-bit register at address 0x{:08X}", addr);
         let param = addr.to_le_bytes();
         let resp = self.devctrl(Cmd::DeviceCtrlReadRegister, Some(&param))?;
         debug!("[RX] Read Register Response: {:02X?}", resp);
