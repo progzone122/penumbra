@@ -2,8 +2,8 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025 Shomy
 */
-use std::io::Error;
 use log::debug;
+use std::io::Error;
 
 #[derive(Debug, Clone)]
 pub enum DAType {
