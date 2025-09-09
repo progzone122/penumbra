@@ -89,6 +89,20 @@ pub enum Cmd {
     CtrlStorageTest = 0x0E0001,
     CtrlRamTest = 0x0E0002,
     DeviceCtrlReadRegister = 0x0E0003,
+
+    // Extensions
+    ExtAck = 0x0F0000,
+    ExtReadMem = 0x0F0001,
+    ExtReadRegister = 0x0F0002,
+    ExtWriteMem = 0x0F0003,
+    ExtWriteRegister = 0x0F0004,
+    ExtSetStorage = 0x0F0005,
+    ExtSetRpmbKey = 0x0F0006,
+    ExtProgRpmbKey = 0x0F0007,
+    ExtInitRpmb = 0x0F0008,
+    ExtReadRpmb = 0x0F0009,
+    ExtWriteRpmb = 0x0F000A,
+    ExtSej = 0x0F000B,
 }
 
 #[repr(u32)]
