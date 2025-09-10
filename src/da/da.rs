@@ -5,7 +5,7 @@
 use log::debug;
 use std::io::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DAType {
     Legacy,
     V5,
@@ -49,6 +49,13 @@ impl DAFile {
         } else {
             DAType::V5
         };
+
+        if da_type != DAType::Legacy && !hdr.windows(0x12).any(|w| w == b"MTK_DOWNLOAD_AGENT") {
+            return Err(Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid DA file: Missing MTK_DOWNLOAD_AGENT signature",
+            ));
+        }
 
         let da_id = String::from_utf8_lossy(&hdr[0x20..0x60])
             .trim_end_matches('\0')
