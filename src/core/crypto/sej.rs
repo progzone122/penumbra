@@ -15,7 +15,7 @@
 use crate::core::crypto::config::CryptoConfig;
 use aes::{Aes128, Aes256};
 use cbc::{Decryptor, Encryptor}; // TODO: Recheck this crate, as it doesn't receive stable updates for 3+ years
-use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 use log::debug;
 
 #[repr(u32)]
@@ -119,14 +119,14 @@ impl<'a> SEJCrypto<'a> {
         self.config.sej_base + reg.offset()
     }
 
-    fn wreg(&mut self, reg: SejReg, val: u32) {
+    async fn wreg(&mut self, reg: SejReg, val: u32) {
         let addr = self.reg_addr(reg);
-        self.config.write32(addr, val);
+        self.config.write32(addr, val).await;
     }
 
-    fn rreg(&mut self, reg: SejReg) -> u32 {
+    async fn rreg(&mut self, reg: SejReg) -> u32 {
         let addr = self.reg_addr(reg);
-        self.config.read32(addr)
+        self.config.read32(addr).await
     }
 
     // Note: This modifies the data directly, it does not return a new Vec
@@ -160,14 +160,14 @@ impl<'a> SEJCrypto<'a> {
         }
     }
 
-    pub fn sej_seccfg_hw(&mut self, data: &[u8], encrypt: bool, noxor: bool) -> Vec<u8> {
+    pub async fn sej_seccfg_hw(&mut self, data: &[u8], encrypt: bool, noxor: bool) -> Vec<u8> {
         let mut working = data.to_vec();
         if encrypt && !noxor {
             self.xor(&mut working);
         }
 
         self.sej_v3_init(encrypt, &HACC_CFG_1, true);
-        let mut result = self.sej_run(&working);
+        let mut result = self.sej_run(&working).await;
         self.sej_terminate();
 
         if !encrypt && !noxor {
@@ -177,22 +177,22 @@ impl<'a> SEJCrypto<'a> {
         result
     }
 
-    pub fn sej_seccfg_hw_v3(&mut self, data: &[u8], encrypt: bool) -> Vec<u8> {
-        self.hw_aes128_cbc_encrypt(data, encrypt, false)
+    pub async fn sej_seccfg_hw_v3(&mut self, data: &[u8], encrypt: bool) -> Vec<u8> {
+        self.hw_aes128_cbc_encrypt(data, encrypt, false).await
     }
 
-    pub fn sej_seccfg_hw_v4(&mut self, data: &[u8], encrypt: bool) -> Vec<u8> {
-        self.hw_aes128_cbc_encrypt(data, encrypt, true)
+    pub async fn sej_seccfg_hw_v4(&mut self, data: &[u8], encrypt: bool) -> Vec<u8> {
+        self.hw_aes128_cbc_encrypt(data, encrypt, true).await
     }
 
-    fn hw_aes128_cbc_encrypt(&mut self, data: &[u8], encrypt: bool, legacy: bool) -> Vec<u8> {
-        self.sej_v3_init(encrypt, &HACC_CFG_1, legacy);
-        let ret = self.sej_run(&data);
-        self.sej_terminate();
+    async fn hw_aes128_cbc_encrypt(&mut self, data: &[u8], encrypt: bool, legacy: bool) -> Vec<u8> {
+        self.sej_v3_init(encrypt, &HACC_CFG_1, legacy).await;
+        let ret = self.sej_run(&data).await;
+        self.sej_terminate().await;
         ret
     }
 
-    fn sej_run(&mut self, data: &[u8]) -> Vec<u8> {
+    async fn sej_run(&mut self, data: &[u8]) -> Vec<u8> {
         let num_blocks = data.len() / 16; // I'm using u8, mtkclient uses u32
         let mut output = Vec::with_capacity(data.len());
 
@@ -213,25 +213,27 @@ impl<'a> SEJCrypto<'a> {
             self.wreg(SejReg::ACON2, SEJ_AES_START);
 
             for _ in 0..20 {
-                if self.rreg(SejReg::ACON2) & SEJ_AES_RDY != 0 {
+                if self.rreg(SejReg::ACON2).await & SEJ_AES_RDY != 0 {
                     break;
                 }
             }
 
             for word in 0..4 {
-                let out_val = self.rreg(match word {
-                    0 => SejReg::AOUT0,
-                    1 => SejReg::AOUT1,
-                    2 => SejReg::AOUT2,
-                    _ => SejReg::AOUT3,
-                });
+                let out_val = self
+                    .rreg(match word {
+                        0 => SejReg::AOUT0,
+                        1 => SejReg::AOUT1,
+                        2 => SejReg::AOUT2,
+                        _ => SejReg::AOUT3,
+                    })
+                    .await;
                 output.extend_from_slice(&out_val.to_le_bytes());
             }
         }
         output
     }
 
-    fn sej_v3_init(&mut self, encrypt: bool, iv: &[u32], legacy: bool) {
+    async fn sej_v3_init(&mut self, encrypt: bool, iv: &[u32], legacy: bool) {
         let acon_settings = SEJ_AES_CHG_BO_OFF
             | SEJ_AES_TYPE_128
             | if !iv.is_empty() { SEJ_AES_MODE_CBC } else { 0 }
@@ -254,8 +256,8 @@ impl<'a> SEJCrypto<'a> {
             SejReg::ACON,
             SEJ_AES_CHG_BO_OFF | SEJ_AES_MODE_CBC | SEJ_AES_TYPE_128 | SEJ_AES_DEC,
         );
-        self.wreg(SejReg::ACONK, SEJ_AES_BK2C | SEJ_AES_R2K);
-        self.wreg(SejReg::ACON2, SEJ_AES_CLR);
+        self.wreg(SejReg::ACONK, SEJ_AES_BK2C | SEJ_AES_R2K).await;
+        self.wreg(SejReg::ACON2, SEJ_AES_CLR).await;
 
         for (i, &val) in iv.iter().enumerate().take(4) {
             self.wreg(
@@ -270,52 +272,55 @@ impl<'a> SEJCrypto<'a> {
         }
 
         if legacy {
-            let mut val = self.rreg(SejReg::UNK) | 2;
+            let mut val = self.rreg(SejReg::UNK).await | 2;
             self.wreg(SejReg::UNK, val);
-            val = self.rreg(SejReg::ACON2) | 0x40000000;
+            val = self.rreg(SejReg::ACON2).await | 0x40000000;
             self.wreg(SejReg::ACON2, val);
 
             for _ in 0..20 {
-                if self.rreg(SejReg::ACON2) > 0x80000000 {
+                if self.rreg(SejReg::ACON2).await > 0x80000000 {
                     break;
                 }
             }
 
-            val = self.rreg(SejReg::UNK) & 0xFFFFFFFE;
-            self.wreg(SejReg::UNK, val);
-            self.wreg(SejReg::ACONK, SEJ_AES_BK2C);
-            self.wreg(SejReg::ACON, acon_settings);
+            val = self.rreg(SejReg::UNK).await & 0xFFFFFFFE;
+            self.wreg(SejReg::UNK, val).await;
+            self.wreg(SejReg::ACONK, SEJ_AES_BK2C).await;
+            self.wreg(SejReg::ACON, acon_settings).await;
         } else {
             self.wreg(SejReg::UNK, 1);
 
             for i in 0..3 {
                 let pos = i * 4;
-                self.wreg(SejReg::ASRC0, G_CFG_RANDOM_PATTERN[pos]);
-                self.wreg(SejReg::ASRC1, G_CFG_RANDOM_PATTERN[pos + 1]);
-                self.wreg(SejReg::ASRC2, G_CFG_RANDOM_PATTERN[pos + 2]);
-                self.wreg(SejReg::ASRC3, G_CFG_RANDOM_PATTERN[pos + 3]);
+                self.wreg(SejReg::ASRC0, G_CFG_RANDOM_PATTERN[pos]).await;
+                self.wreg(SejReg::ASRC1, G_CFG_RANDOM_PATTERN[pos + 1])
+                    .await;
+                self.wreg(SejReg::ASRC2, G_CFG_RANDOM_PATTERN[pos + 2])
+                    .await;
+                self.wreg(SejReg::ASRC3, G_CFG_RANDOM_PATTERN[pos + 3])
+                    .await;
                 self.wreg(SejReg::ACON2, SEJ_AES_START);
                 for _ in 0..20 {
-                    if self.rreg(SejReg::ACON2) & SEJ_AES_RDY != 0 {
+                    if self.rreg(SejReg::ACON2).await & SEJ_AES_RDY != 0 {
                         break;
                     }
                 }
             }
 
-            self.wreg(SejReg::ACON2, SEJ_AES_CLR);
+            self.wreg(SejReg::ACON2, SEJ_AES_CLR).await;
 
-            self.wreg(SejReg::ACFG0, iv[0]);
-            self.wreg(SejReg::ACFG1, iv[1]);
-            self.wreg(SejReg::ACFG2, iv[2]);
-            self.wreg(SejReg::ACFG3, iv[3]);
+            self.wreg(SejReg::ACFG0, iv[0]).await;
+            self.wreg(SejReg::ACFG1, iv[1]).await;
+            self.wreg(SejReg::ACFG2, iv[2]).await;
+            self.wreg(SejReg::ACFG3, iv[3]).await;
 
-            self.wreg(SejReg::ACON, acon_settings);
-            self.wreg(SejReg::ACONK, 0);
+            self.wreg(SejReg::ACON, acon_settings).await;
+            self.wreg(SejReg::ACONK, 0).await;
         }
     }
 
     // Just clears the registers after use, nothing fancy
-    fn sej_terminate(&mut self) {
+    async fn sej_terminate(&mut self) {
         self.wreg(SejReg::ACON2, SEJ_AES_CLR);
 
         for reg in [
@@ -328,7 +333,7 @@ impl<'a> SEJCrypto<'a> {
             SejReg::AKEY6,
             SejReg::AKEY7,
         ] {
-            self.wreg(reg, 0);
+            self.wreg(reg, 0).await;
         }
     }
 }

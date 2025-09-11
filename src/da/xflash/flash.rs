@@ -2,13 +2,13 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025 Shomy
 */
-use crate::da::xflash::cmds::*;
-use crate::da::xflash::XFlash;
 use crate::da::DAProtocol;
+use crate::da::xflash::XFlash;
+use crate::da::xflash::cmds::*;
 use log::{debug, info};
 use std::io::{Error, ErrorKind, Write};
 
-pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
+pub async fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
     info!("Reading flash at address {:#X} with size {:#X}", addr, size);
 
     // Format:
@@ -41,9 +41,9 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
             .collect::<Vec<u8>>(),
     );
 
-    xflash.send_cmd(Cmd::ReadData)?;
+    xflash.send_cmd(Cmd::ReadData).await?;
 
-    let status = xflash.get_status()?;
+    let status = xflash.get_status().await?;
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
@@ -51,9 +51,9 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
         ));
     }
 
-    xflash.send_data(&param)?;
+    xflash.send_data(&param).await?;
 
-    let status = xflash.get_status()?;
+    let status = xflash.get_status().await?;
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
@@ -69,7 +69,7 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
 
     // Read chunk, send acknowledgment, status, repeat until profit
     loop {
-        let chunk = xflash.read_data()?;
+        let chunk = xflash.read_data().await?;
         if chunk.is_empty() {
             debug!("No data received, breaking.");
             break;
@@ -89,7 +89,7 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
         xflash.conn.port.write_all(&ack_payload)?;
         xflash.conn.port.flush()?;
 
-        let status = xflash.get_status()?;
+        let status = xflash.get_status().await?;
         debug!("Status after chunk: 0x{:08X}", status);
 
         if status != 0 {
@@ -107,7 +107,12 @@ pub fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>
 }
 
 // TODO: Actually verify if the partition allows writing data.len() bytes
-pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
+pub async fn write_flash(
+    xflash: &mut XFlash,
+    addr: u64,
+    size: usize,
+    data: &[u8],
+) -> Result<(), Error> {
     info!(
         "Writing flash at address {:#X} with size {:#X}",
         addr,
@@ -117,7 +122,7 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     // Note to self:
     // Next time, don't put this after Cmd::WriteData,
     // or don't expect it to work :/
-    let chunk_size = get_write_packet_length(xflash)?;
+    let chunk_size = get_write_packet_length(xflash).await?;
     // let chunk_size = 0x2000;
     info!("Using chunk size of {} bytes", chunk_size);
 
@@ -160,8 +165,8 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
 
     debug!("Sending write data cmd!");
     // TODO: Consider making a send_cmd_with_payload function
-    xflash.send_cmd(Cmd::WriteData)?;
-    let status = xflash.get_status()?;
+    xflash.send_cmd(Cmd::WriteData).await?;
+    let status = xflash.get_status().await?;
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
@@ -172,7 +177,7 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     debug!("Write data cmd sent, sending parameters...");
     // Note to self: send_data already checks the status, so DON'T check it again!!
     // Also, perhaps make it return the status DUH!
-    xflash.send_data(&param)?;
+    xflash.send_data(&param).await?;
 
     debug!("Parameters sent!");
     let mut bytes_written = 0;
@@ -201,13 +206,15 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
         // then the data, we need to send three different parts, with one being all zeros (why???).
         // But alas, who am I to judge, at least they didn't make an XML protocol... right?
         debug!("Sending first incoherent part of this chunk ({})...", pos);
-        xflash.send(0u32, DataType::ProtocolFlow as u32)?;
+        xflash.send(0u32, DataType::ProtocolFlow as u32).await?;
 
         debug!("Sending checksum {} for chunk {}", checksum, pos);
-        xflash.send(checksum as u32, DataType::ProtocolFlow as u32)?;
+        xflash
+            .send(checksum as u32, DataType::ProtocolFlow as u32)
+            .await?;
 
         debug!("Sending chunk of {} bytes", chunk.len());
-        xflash.send_data(chunk)?;
+        xflash.send_data(chunk).await?;
 
         bytes_written += chunk.len();
         pos = packet_end;
@@ -215,7 +222,7 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
         debug!("Written {}/{} bytes...", bytes_written, actual_data.len());
     }
 
-    let status = xflash.get_status()?;
+    let status = xflash.get_status().await?;
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
@@ -231,9 +238,9 @@ pub fn write_flash(xflash: &mut XFlash, addr: u64, size: usize, data: &[u8]) -> 
     Ok(())
 }
 
-fn get_packet_length(xflash: &mut XFlash) -> Result<(usize, usize), Error> {
-    let packet_length = xflash.devctrl(Cmd::GetPacketLength, None)?;
-    let status = xflash.get_status()?;
+async fn get_packet_length(xflash: &mut XFlash) -> Result<(usize, usize), Error> {
+    let packet_length = xflash.devctrl(Cmd::GetPacketLength, None).await?;
+    let status = xflash.get_status().await?;
     if status != 0 {
         return Err(Error::new(
             ErrorKind::Other,
@@ -261,12 +268,12 @@ fn get_packet_length(xflash: &mut XFlash) -> Result<(usize, usize), Error> {
     Ok((write_len, read_len))
 }
 
-fn get_write_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
-    let (write_len, _) = get_packet_length(xflash)?;
+async fn get_write_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
+    let (write_len, _) = get_packet_length(xflash).await?;
     Ok(write_len)
 }
 
-fn get_read_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
-    let (_, read_len) = get_packet_length(xflash)?;
+async fn get_read_packet_length(xflash: &mut XFlash) -> Result<usize, Error> {
+    let (_, read_len) = get_packet_length(xflash).await?;
     Ok(read_len)
 }

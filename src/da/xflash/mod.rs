@@ -10,30 +10,32 @@ use crate::connection::ConnectionType;
 use crate::core::device::DeviceInfo;
 use crate::da::xflash::cmds::*;
 use crate::da::xflash::exts::{boot_extensions, read32_ext, write32_ext};
-use crate::da::{DAProtocol, DA};
-use crate::exploit::carbonara::Carbonara;
+use crate::da::{DA, DAProtocol};
 use crate::exploit::Exploit;
+use crate::exploit::carbonara::Carbonara;
 use log::{debug, info, warn};
-use std::cell::RefCell;
-use std::io::{Error, ErrorKind, Read, Write};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
+use tokio::sync::Mutex;
 
 pub struct XFlash {
     pub conn: Connection,
     pub da: DA,
-    pub dev_info: Rc<RefCell<DeviceInfo>>,
+    pub dev_info: Arc<Mutex<DeviceInfo>>,
     using_exts: bool,
 }
 
+#[async_trait::async_trait]
 impl DAProtocol for XFlash {
-    fn upload_da(&mut self) -> Result<bool, Error> {
+    async fn upload_da(&mut self) -> Result<bool, Error> {
         let (da1addr, da1length, da1data, da1sig_len) = match self.da.get_da1() {
             Some(da1) => (da1.addr, da1.length, da1.data.clone(), da1.sig_len),
             None => return Err(Error::new(ErrorKind::NotFound, "DA1 region not found")),
         };
 
         self.upload_stage1(da1addr, da1length, da1data, da1sig_len)
+            .await
             .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to upload DA1: {}", e)))?;
 
         let da2 = match self.da.get_da2() {
@@ -43,10 +45,10 @@ impl DAProtocol for XFlash {
         let da2addr = da2.addr;
 
         // TODO: Patch DA2 with Carbonara
-        let carbonara_da = Rc::new(RefCell::new(self.da.clone()));
-        let mut carbonara = Carbonara::new(carbonara_da, self as &mut dyn DAProtocol);
+        let carbonara_da = Arc::new(Mutex::new(self.da.clone()));
+        let mut carbonara = Carbonara::new(carbonara_da);
 
-        let da2data = match Exploit::run(&mut carbonara) {
+        let da2data = match carbonara.run(self).await {
             Ok(_) => match carbonara.get_patched_da2() {
                 Some(patched_da2) => patched_da2.data.clone(),
                 None => da2.data,
@@ -54,10 +56,10 @@ impl DAProtocol for XFlash {
             Err(_) => da2.data,
         };
 
-        match self.boot_to(da2addr, &da2data) {
+        match self.boot_to(da2addr, &da2data).await {
             Ok(true) => {
                 info!("[Penumbra] Successfully uploaded and executed DA2");
-                self.boot_extensions()?;
+                self.boot_extensions().await?;
                 Ok(true)
             }
             Ok(false) => Err(Error::new(ErrorKind::Other, "Failed to execute DA2")),
@@ -68,16 +70,16 @@ impl DAProtocol for XFlash {
         }
     }
 
-    fn boot_to(&mut self, addr: u32, data: &[u8]) -> Result<bool, Error> {
+    async fn boot_to(&mut self, addr: u32, data: &[u8]) -> Result<bool, Error> {
         info!(
             "[Penumbra] Sending BOOT_TO command to address 0x{:08X} with {} bytes",
             addr,
             data.len()
         );
 
-        self.send_cmd(Cmd::BootTo)?;
+        self.send_cmd(Cmd::BootTo).await?;
 
-        let status = self.get_status()?;
+        let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -105,9 +107,9 @@ impl DAProtocol for XFlash {
             param.len()
         );
 
-        self.conn.port.write_all(&hdr)?;
-        self.conn.port.write_all(&param)?;
-        self.conn.port.flush()?;
+        self.conn.port.write_all(&hdr).await?;
+        self.conn.port.write_all(&param).await?;
+        self.conn.port.flush().await?;
 
         // We just need to change the data size,
         // so let us just reuse what we've got already ;P
@@ -118,14 +120,14 @@ impl DAProtocol for XFlash {
             data.len()
         );
 
-        self.conn.port.write_all(&hdr)?;
+        self.conn.port.write_all(&hdr).await?;
 
         // Chunks of 1KB
         let chunk_size = 1024;
         let mut pos = 0;
         while pos < data.len() {
             let end = std::cmp::min(pos + chunk_size, data.len());
-            self.conn.port.write_all(&data[pos..end])?;
+            self.conn.port.write_all(&data[pos..end]).await?;
             pos = end;
 
             if pos % (chunk_size * 20) == 0 && pos > 0 {
@@ -133,12 +135,15 @@ impl DAProtocol for XFlash {
             }
         }
 
-        self.conn.port.flush()?;
+        self.conn.port.flush().await?;
         debug!("[TX] Completed sending {} bytes", data.len());
 
-        self.conn.port.set_timeout(Duration::from_millis(500))?;
+        // self.conn
+        //     .port
+        //     .set_timeout(Duration::from_millis(500))
+        //     .await?;
 
-        let status = self.get_status()?;
+        let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -147,7 +152,7 @@ impl DAProtocol for XFlash {
         }
 
         // It needs to receive the SYNC signal as well
-        let status = self.get_status()?;
+        let status = self.get_status().await?;
         if status != Cmd::SyncSignal as u32 && status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -159,7 +164,7 @@ impl DAProtocol for XFlash {
         Ok(true)
     }
 
-    fn send_data(&mut self, data: &[u8]) -> Result<bool, Error> {
+    async fn send_data(&mut self, data: &[u8]) -> Result<bool, Error> {
         let mut hdr = [0u8; 12];
 
         // MAGIC | DataType (1) | Data Length
@@ -173,20 +178,20 @@ impl DAProtocol for XFlash {
             data.len()
         );
 
-        self.conn.port.write_all(&hdr)?;
+        self.conn.port.write_all(&hdr).await?;
 
         let mut pos = 0;
         while pos < data.len() {
             let end = std::cmp::min(pos + 64, data.len());
             let chunk = &data[pos..end];
             debug!("[TX] Sending chunk ({} bytes): {:02X?}", chunk.len(), chunk);
-            self.conn.port.write_all(chunk)?;
+            self.conn.port.write_all(chunk).await?;
             pos += chunk.len();
         }
 
-        self.conn.port.flush()?;
+        self.conn.port.flush().await?;
 
-        let status = self.get_status()?;
+        let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -197,9 +202,9 @@ impl DAProtocol for XFlash {
         Ok(true)
     }
 
-    fn get_status(&mut self) -> Result<u32, Error> {
+    async fn get_status(&mut self) -> Result<u32, Error> {
         let mut hdr = [0u8; 12];
-        self.conn.port.read_exact(&mut hdr)?;
+        self.conn.port.read_exact(&mut hdr).await?;
 
         let magic = u32::from_le_bytes(hdr[0..4].try_into().unwrap());
         let len = u32::from_le_bytes(hdr[8..12].try_into().unwrap());
@@ -209,17 +214,13 @@ impl DAProtocol for XFlash {
         }
 
         let mut data = vec![0u8; len as usize];
-        self.conn.port.read_exact(&mut data)?;
+        self.conn.port.read_exact(&mut data).await?;
 
         let status = match len {
             2 => u16::from_le_bytes(data[0..2].try_into().unwrap()) as u32,
             4 => {
                 let val = u32::from_le_bytes(data[0..4].try_into().unwrap());
-                if val == Cmd::Magic as u32 {
-                    0
-                } else {
-                    val
-                }
+                if val == Cmd::Magic as u32 { 0 } else { val }
             }
             _ if data.len() >= 4 => u32::from_le_bytes(data[0..4].try_into().unwrap()),
             _ if !data.is_empty() => data[0] as u32,
@@ -230,7 +231,7 @@ impl DAProtocol for XFlash {
         Ok(status)
     }
 
-    fn send(&mut self, data: u32, datatype: u32) -> Result<bool, Error> {
+    async fn send(&mut self, data: u32, datatype: u32) -> Result<bool, Error> {
         let data_bytes = data.to_le_bytes();
 
         let mut hdr = [0u8; 12];
@@ -242,25 +243,25 @@ impl DAProtocol for XFlash {
 
         debug!("[TX] Header: {:02X?}, Payload: 0x{:08X}", hdr, data);
 
-        self.conn.port.write_all(&hdr)?;
-        self.conn.port.write_all(&data_bytes)?;
+        self.conn.port.write_all(&hdr).await?;
+        self.conn.port.write_all(&data_bytes).await?;
 
-        self.conn.port.flush()?;
+        self.conn.port.flush().await?;
 
         Ok(true)
     }
 
-    fn read_flash(&mut self, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
-        flash::read_flash(self, addr, size)
+    async fn read_flash(&mut self, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
+        flash::read_flash(self, addr, size).await
     }
 
-    fn write_flash(&mut self, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
-        flash::write_flash(self, addr, size, data)
+    async fn write_flash(&mut self, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
+        flash::write_flash(self, addr, size, data).await
     }
 
-    fn get_usb_speed(&mut self) -> Result<u32, Error> {
-        let usb_speed = self.devctrl(Cmd::GetUsbSpeed, None)?;
-        let status = self.get_status()?;
+    async fn get_usb_speed(&mut self) -> Result<u32, Error> {
+        let usb_speed = self.devctrl(Cmd::GetUsbSpeed, None).await?;
+        let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -280,13 +281,15 @@ impl DAProtocol for XFlash {
         Ok(())
     }
 
-    fn read32(&mut self, addr: u32) -> Result<u32, Error> {
+    async fn read32(&mut self, addr: u32) -> Result<u32, Error> {
         if self.using_exts {
-            return read32_ext(self, addr);
+            return read32_ext(self, addr).await;
         }
         debug!("Reading 32-bit register at address 0x{:08X}", addr);
         let param = addr.to_le_bytes();
-        let resp = self.devctrl(Cmd::DeviceCtrlReadRegister, Some(&param))?;
+        let resp = self
+            .devctrl(Cmd::DeviceCtrlReadRegister, Some(&param))
+            .await?;
         debug!("[RX] Read Register Response: {:02X?}", resp);
         if resp.len() < 4 {
             debug!("Short read: expected 4 bytes, got {}", resp.len());
@@ -295,9 +298,9 @@ impl DAProtocol for XFlash {
         Ok(u32::from_le_bytes(resp[0..4].try_into().unwrap()))
     }
 
-    fn write32(&mut self, addr: u32, value: u32) -> Result<(), Error> {
+    async fn write32(&mut self, addr: u32, value: u32) -> Result<(), Error> {
         if self.using_exts {
-            return write32_ext(self, addr, value);
+            return write32_ext(self, addr, value).await;
         }
         let mut param = Vec::new();
         param.extend_from_slice(&addr.to_le_bytes());
@@ -306,17 +309,17 @@ impl DAProtocol for XFlash {
             "[TX] Writing 32-bit value 0x{:08X} to address 0x{:08X}",
             value, addr
         );
-        self.devctrl(Cmd::SetRegisterValue, Some(&param))?;
+        self.devctrl(Cmd::SetRegisterValue, Some(&param)).await?;
         Ok(())
     }
 }
 
 impl XFlash {
-    fn send_cmd(&mut self, cmd: Cmd) -> Result<bool, Error> {
-        self.send(cmd as u32, DataType::ProtocolFlow as u32)
+    async fn send_cmd(&mut self, cmd: Cmd) -> Result<bool, Error> {
+        self.send(cmd as u32, DataType::ProtocolFlow as u32).await
     }
 
-    pub fn new(conn: Connection, da: DA, dev_info: Rc<RefCell<DeviceInfo>>) -> Self {
+    pub fn new(conn: Connection, da: DA, dev_info: Arc<Mutex<DeviceInfo>>) -> Self {
         XFlash {
             conn,
             da,
@@ -325,10 +328,10 @@ impl XFlash {
         }
     }
 
-    fn devctrl(&mut self, cmd: Cmd, param: Option<&[u8]>) -> Result<Vec<u8>, Error> {
-        self.send_cmd(Cmd::DeviceCtrl)?;
+    async fn devctrl(&mut self, cmd: Cmd, param: Option<&[u8]>) -> Result<Vec<u8>, Error> {
+        self.send_cmd(Cmd::DeviceCtrl).await?;
 
-        let status = self.get_status()?;
+        let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -339,8 +342,8 @@ impl XFlash {
             ));
         }
 
-        self.send_cmd(cmd)?;
-        let status = self.get_status()?;
+        self.send_cmd(cmd).await?;
+        let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -352,16 +355,16 @@ impl XFlash {
         }
 
         if let Some(p) = param {
-            self.send_data(p)?;
+            self.send_data(p).await?;
             return Ok(Vec::new());
         }
 
-        self.read_data()
+        self.read_data().await
     }
 
-    fn read_data(&mut self) -> Result<Vec<u8>, Error> {
+    async fn read_data(&mut self) -> Result<Vec<u8>, Error> {
         let mut hdr = [0u8; 12];
-        self.conn.port.read_exact(&mut hdr)?;
+        self.conn.port.read_exact(&mut hdr).await?;
 
         let magic = u32::from_le_bytes(hdr[0..4].try_into().unwrap());
         let len = u32::from_le_bytes(hdr[8..12].try_into().unwrap());
@@ -371,12 +374,12 @@ impl XFlash {
         }
 
         let mut data = vec![0u8; len as usize];
-        self.conn.port.read_exact(&mut data)?;
+        self.conn.port.read_exact(&mut data).await?;
 
         Ok(data)
     }
 
-    fn upload_stage1(
+    async fn upload_stage1(
         &mut self,
         addr: u32,
         length: u32,
@@ -388,16 +391,16 @@ impl XFlash {
             addr, length
         );
 
-        self.conn.send_da(&data, length, addr, sig_len)?;
+        self.conn.send_da(&data, length, addr, sig_len).await?;
         info!("[Penumbra] Sent DA1, jumping to address 0x{:08X}...", addr);
-        self.conn.jump_da(addr)?;
+        self.conn.jump_da(addr).await?;
 
         // Without this, it timed out during my tests, so leave it here for now
         // self.conn.port.set_timeout(Duration::from_secs(10))?;
 
         let sync_byte = {
             let mut sync_buf = [0u8; 1];
-            match self.conn.port.read_exact(&mut sync_buf) {
+            match self.conn.port.read_exact(&mut sync_buf).await {
                 Ok(_) => sync_buf[0],
                 Err(e) if e.kind() == ErrorKind::TimedOut => {
                     return Err(Error::new(
@@ -415,8 +418,8 @@ impl XFlash {
             return Err(Error::new(ErrorKind::Other, "Incorrect sync byte received"));
         }
 
-        self.send_cmd(Cmd::SyncSignal)?;
-        self.send_cmd(Cmd::SetupEnvironment)?;
+        self.send_cmd(Cmd::SyncSignal).await?;
+        self.send_cmd(Cmd::SetupEnvironment).await?;
 
         let mut env_param = Vec::new();
         env_param.extend_from_slice(&2u32.to_le_bytes()); // da_log_level = 2 (UART)
@@ -425,20 +428,20 @@ impl XFlash {
         env_param.extend_from_slice(&0u32.to_le_bytes()); // ufs_provision = 0
         env_param.extend_from_slice(&0u32.to_le_bytes()); // ...
 
-        self.send_data(&env_param)?;
-        self.send_cmd(Cmd::SetupHwInitParams)?;
+        self.send_data(&env_param).await?;
+        self.send_cmd(Cmd::SetupHwInitParams).await?;
         let hw_param = [0x00, 0x00, 0x00, 0x00];
-        self.send_data(&hw_param)?;
+        self.send_data(&hw_param).await?;
 
         let (magic, dtype, len) = {
             let mut sync_hdr = [0u8; 12];
-            match self.conn.port.read_exact(&mut sync_hdr) {
+            match self.conn.port.read_exact(&mut sync_hdr).await {
                 Ok(_) => {}
                 Err(e) => {
                     return Err(Error::new(
                         ErrorKind::Other,
                         format!("Failed to read sync header: {}", e),
-                    ))
+                    ));
                 }
             }
 
@@ -455,13 +458,13 @@ impl XFlash {
 
         let sync_signal_value = {
             let mut sync_signal_buf = [0u8; 4];
-            match self.conn.port.read_exact(&mut sync_signal_buf) {
+            match self.conn.port.read_exact(&mut sync_signal_buf).await {
                 Ok(_) => {}
                 Err(e) => {
                     return Err(Error::new(
                         ErrorKind::Other,
                         format!("Failed to read sync payload: {}", e),
-                    ))
+                    ));
                 }
             }
             u32::from_le_bytes(sync_signal_buf)
@@ -478,13 +481,13 @@ impl XFlash {
         Ok(true)
     }
 
-    fn boot_extensions(&mut self) -> Result<bool, Error> {
+    async fn boot_extensions(&mut self) -> Result<bool, Error> {
         if self.using_exts {
             warn!("DA extensions already in use, skipping re-upload");
             return Ok(true);
         }
         info!("Booting DA extensions...");
-        boot_extensions(self)?;
+        boot_extensions(self).await?;
 
         self.using_exts = true;
         Ok(true)
