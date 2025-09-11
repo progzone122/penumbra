@@ -6,7 +6,7 @@ use crate::connection::{Connection, ConnectionType};
 use tokio::io::Error;
 
 #[async_trait::async_trait]
-pub trait DAProtocol {
+pub trait DAProtocol: Send {
     // Main helpers
     async fn upload_da(&mut self) -> Result<bool, Error>;
     async fn boot_to(&mut self, addr: u32, data: &[u8]) -> Result<bool, Error>;
