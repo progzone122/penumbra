@@ -251,12 +251,23 @@ impl DAProtocol for XFlash {
         Ok(true)
     }
 
-    async fn read_flash(&mut self, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
-        flash::read_flash(self, addr, size).await
+    async fn read_flash(
+        &mut self,
+        addr: u64,
+        size: usize,
+        progress: &mut (dyn FnMut(usize, usize) + Send),
+    ) -> Result<Vec<u8>, Error> {
+        flash::read_flash(self, addr, size, progress).await
     }
 
-    async fn write_flash(&mut self, addr: u64, size: usize, data: &[u8]) -> Result<(), Error> {
-        flash::write_flash(self, addr, size, data).await
+    async fn write_flash(
+        &mut self,
+        addr: u64,
+        size: usize,
+        data: &[u8],
+        progress: &mut (dyn FnMut(usize, usize) + Send),
+    ) -> Result<(), Error> {
+        flash::write_flash(self, addr, size, data, progress).await
     }
 
     async fn get_usb_speed(&mut self) -> Result<u32, Error> {

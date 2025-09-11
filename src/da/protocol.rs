@@ -15,8 +15,20 @@ pub trait DAProtocol {
     async fn get_status(&mut self) -> Result<u32, Error>;
     // FLASH operations
     // fn read_partition(&mut self, name: &str) -> Result<Vec<u8>, Error>;
-    async fn read_flash(&mut self, addr: u64, size: usize) -> Result<Vec<u8>, Error>;
-    async fn write_flash(&mut self, addr: u64, size: usize, data: &[u8]) -> Result<(), Error>;
+    async fn read_flash(
+        &mut self,
+        addr: u64,
+        size: usize,
+        progress: &mut (dyn FnMut(usize, usize) + Send),
+    ) -> Result<Vec<u8>, Error>;
+
+    async fn write_flash(
+        &mut self,
+        addr: u64,
+        size: usize,
+        data: &[u8],
+        progress: &mut (dyn FnMut(usize, usize) + Send),
+    ) -> Result<(), Error>;
 
     // Memory
     async fn read32(&mut self, addr: u32) -> Result<u32, Error>;

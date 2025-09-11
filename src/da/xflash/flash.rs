@@ -8,7 +8,15 @@ use crate::da::xflash::cmds::*;
 use log::{debug, info};
 use std::io::{Error, ErrorKind, Write};
 
-pub async fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<Vec<u8>, Error> {
+pub async fn read_flash<F>(
+    xflash: &mut XFlash,
+    addr: u64,
+    size: usize,
+    mut progress: F,
+) -> Result<Vec<u8>, Error>
+where
+    F: FnMut(usize, usize),
+{
     info!("Reading flash at address {:#X} with size {:#X}", addr, size);
 
     // Format:
@@ -100,6 +108,9 @@ pub async fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<V
             debug!("Requested size read. Breaking.");
             break;
         }
+
+        progress(bytes_read, size);
+
         debug!("Read {}/{} bytes...", bytes_read, size);
     }
 
@@ -107,12 +118,16 @@ pub async fn read_flash(xflash: &mut XFlash, addr: u64, size: usize) -> Result<V
 }
 
 // TODO: Actually verify if the partition allows writing data.len() bytes
-pub async fn write_flash(
+pub async fn write_flash<F>(
     xflash: &mut XFlash,
     addr: u64,
     size: usize,
     data: &[u8],
-) -> Result<(), Error> {
+    mut progress: F,
+) -> Result<(), Error>
+where
+    F: FnMut(usize, usize),
+{
     info!(
         "Writing flash at address {:#X} with size {:#X}",
         addr,
@@ -218,6 +233,8 @@ pub async fn write_flash(
 
         bytes_written += chunk.len();
         pos = packet_end;
+
+        progress(bytes_written, size);
 
         debug!("Written {}/{} bytes...", bytes_written, actual_data.len());
     }
