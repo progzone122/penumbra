@@ -8,3 +8,4 @@ pub mod da;
 pub mod exploit;
 
 pub use core::device::Device;
+pub use connection::{find_mtk_port, get_mtk_port_connection};

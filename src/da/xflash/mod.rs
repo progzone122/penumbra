@@ -14,10 +14,12 @@ use crate::da::{DA, DAProtocol};
 use crate::exploit::Exploit;
 use crate::exploit::carbonara::Carbonara;
 use log::{debug, info, warn};
+use serialport::SerialPort;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
+use tokio::time::{Duration, sleep};
 
 pub struct XFlash {
     pub conn: Connection,
@@ -138,11 +140,6 @@ impl DAProtocol for XFlash {
         self.conn.port.flush().await?;
         debug!("[TX] Completed sending {} bytes", data.len());
 
-        // self.conn
-        //     .port
-        //     .set_timeout(Duration::from_millis(500))
-        //     .await?;
-
         let status = self.get_status().await?;
         if status != 0 {
             return Err(Error::new(
@@ -204,8 +201,16 @@ impl DAProtocol for XFlash {
 
     async fn get_status(&mut self) -> Result<u32, Error> {
         let mut hdr = [0u8; 12];
-        self.conn.port.read_exact(&mut hdr).await?;
-
+        match timeout(
+            Duration::from_millis(500),
+            self.conn.port.read_exact(&mut hdr),
+        )
+        .await
+        {
+            Ok(result) => result?,
+            Err(_) => return Err(Error::new(ErrorKind::TimedOut, "Status read timed out")),
+        };
+        debug!("[RX] Status Header: {:02X?}", hdr);
         let magic = u32::from_le_bytes(hdr[0..4].try_into().unwrap());
         let len = u32::from_le_bytes(hdr[8..12].try_into().unwrap());
 
@@ -215,7 +220,6 @@ impl DAProtocol for XFlash {
 
         let mut data = vec![0u8; len as usize];
         self.conn.port.read_exact(&mut data).await?;
-
         let status = match len {
             2 => u16::from_le_bytes(data[0..2].try_into().unwrap()) as u32,
             4 => {
