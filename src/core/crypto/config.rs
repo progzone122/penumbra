@@ -12,8 +12,8 @@
     the combined work is subject to the networking terms of the AGPL-3.0-or-later,
     as for term 13 of the GPL-3.0-or-later license.
 */
-#[async_trait::async_trait(?Send)]
-pub trait CryptoIO {
+#[async_trait::async_trait]
+pub trait CryptoIO: Send {
     async fn read32(&mut self, addr: u32) -> u32;
     async fn write32(&mut self, addr: u32, val: u32);
 }
