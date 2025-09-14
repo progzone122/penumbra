@@ -13,10 +13,9 @@
     as for term 13 of the GPL-3.0-or-later license.
 */
 use crate::core::crypto::config::CryptoConfig;
-use aes::{Aes128, Aes256};
+use aes::Aes128;
 use cbc::{Decryptor, Encryptor}; // TODO: Recheck this crate, as it doesn't receive stable updates for 3+ years
 use cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
-use log::debug;
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug)]
@@ -166,9 +165,9 @@ impl<'a> SEJCrypto<'a> {
             self.xor(&mut working);
         }
 
-        self.sej_v3_init(encrypt, &HACC_CFG_1, true);
+        self.sej_v3_init(encrypt, &HACC_CFG_1, true).await;
         let mut result = self.sej_run(&working).await;
-        self.sej_terminate();
+        self.sej_terminate().await;
 
         if !encrypt && !noxor {
             self.xor(&mut result);
@@ -208,9 +207,10 @@ impl<'a> SEJCrypto<'a> {
                         _ => SejReg::ASRC3,
                     },
                     val,
-                );
+                )
+                .await;
             }
-            self.wreg(SejReg::ACON2, SEJ_AES_START);
+            self.wreg(SejReg::ACON2, SEJ_AES_START).await;
 
             for _ in 0..20 {
                 if self.rreg(SejReg::ACON2).await & SEJ_AES_RDY != 0 {
@@ -249,13 +249,14 @@ impl<'a> SEJCrypto<'a> {
             SejReg::AKEY6,
             SejReg::AKEY7,
         ] {
-            self.wreg(reg, 0);
+            self.wreg(reg, 0).await;
         }
 
         self.wreg(
             SejReg::ACON,
             SEJ_AES_CHG_BO_OFF | SEJ_AES_MODE_CBC | SEJ_AES_TYPE_128 | SEJ_AES_DEC,
-        );
+        )
+        .await;
         self.wreg(SejReg::ACONK, SEJ_AES_BK2C | SEJ_AES_R2K).await;
         self.wreg(SejReg::ACON2, SEJ_AES_CLR).await;
 
@@ -268,14 +269,15 @@ impl<'a> SEJCrypto<'a> {
                     _ => SejReg::ACFG3,
                 },
                 val,
-            );
+            )
+            .await;
         }
 
         if legacy {
             let mut val = self.rreg(SejReg::UNK).await | 2;
-            self.wreg(SejReg::UNK, val);
+            self.wreg(SejReg::UNK, val).await;
             val = self.rreg(SejReg::ACON2).await | 0x40000000;
-            self.wreg(SejReg::ACON2, val);
+            self.wreg(SejReg::ACON2, val).await;
 
             for _ in 0..20 {
                 if self.rreg(SejReg::ACON2).await > 0x80000000 {
@@ -288,7 +290,7 @@ impl<'a> SEJCrypto<'a> {
             self.wreg(SejReg::ACONK, SEJ_AES_BK2C).await;
             self.wreg(SejReg::ACON, acon_settings).await;
         } else {
-            self.wreg(SejReg::UNK, 1);
+            self.wreg(SejReg::UNK, 1).await;
 
             for i in 0..3 {
                 let pos = i * 4;
@@ -299,7 +301,7 @@ impl<'a> SEJCrypto<'a> {
                     .await;
                 self.wreg(SejReg::ASRC3, G_CFG_RANDOM_PATTERN[pos + 3])
                     .await;
-                self.wreg(SejReg::ACON2, SEJ_AES_START);
+                self.wreg(SejReg::ACON2, SEJ_AES_START).await;
                 for _ in 0..20 {
                     if self.rreg(SejReg::ACON2).await & SEJ_AES_RDY != 0 {
                         break;
@@ -321,7 +323,7 @@ impl<'a> SEJCrypto<'a> {
 
     // Just clears the registers after use, nothing fancy
     async fn sej_terminate(&mut self) {
-        self.wreg(SejReg::ACON2, SEJ_AES_CLR);
+        self.wreg(SejReg::ACON2, SEJ_AES_CLR).await;
 
         for reg in [
             SejReg::AKEY0,
