@@ -41,3 +41,5 @@ docs/.replit
 docs/replit.nix
 /docs/content/.obsidian
 /docs/content/.trash
+/dumps
+*.log
