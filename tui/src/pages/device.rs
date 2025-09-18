@@ -2,7 +2,7 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025 Shomy
 */
-use crate::app::AppCtx;
+use crate::app::{AppCtx, AppPage};
 use crate::pages::Page;
 use hex::encode;
 use penumbra::core::device::DeviceInfo;
@@ -56,9 +56,9 @@ impl DevicePage {
         }
     }
 
-    pub async fn poll_device(&mut self, ctx: &mut AppCtx) {
+    async fn poll_device(&mut self, ctx: &mut AppCtx) -> Result<(), DeviceStatus> {
         if self.status == DeviceStatus::DAReady || matches!(self.status, DeviceStatus::Error(_)) {
-            return;
+            return Ok(());
         }
         if self.status == DeviceStatus::WaitingForDevice
             && self.last_poll.elapsed() > Duration::from_millis(500)
@@ -68,31 +68,28 @@ impl DevicePage {
             if !ports.is_empty() {
                 self.status = DeviceStatus::Initializing;
 
-                let da_data = ctx.loader.as_ref().map(|da| da.da_raw_data.as_slice());
-                if let Some(da_data) = da_data {
-                    match Device::init(ports[0].clone(), da_data.to_vec()).await {
-                        Ok(mut dev) => match dev.enter_da_mode().await {
-                            Ok(_) => {
-                                if let Some(arc_mutex) = dev.dev_info.as_ref() {
-                                    let guard = arc_mutex.lock().await;
-                                    self.device_info = Some(DeviceInfo::clone(&guard));
-                                }
-                                self.device = Some(Arc::new(Mutex::new(dev)));
-                                self.status = DeviceStatus::DAReady;
-                            }
-                            Err(e) => {
-                                self.status = DeviceStatus::Error(format!("Failed DA mode: {e}"))
-                            }
-                        },
-                        Err(e) => {
-                            self.status = DeviceStatus::Error(format!("Device init failed: {e}"))
-                        }
-                    }
-                } else {
-                    self.status = DeviceStatus::Error("No DA loader in context".to_string());
+                let da_data: Vec<u8> = ctx.loader()
+                    .map(|loader| loader.da_raw_data.as_slice())
+                    .ok_or_else(|| DeviceStatus::Error("No DA loader in context".to_string()))?
+                    .to_vec();
+
+                let mut dev = Device::init(ports[0].clone(), da_data)
+                    .await
+                    .map_err(|e| DeviceStatus::Error(format!("Device init failed: {e}")))?;
+
+                dev.enter_da_mode()
+                    .await
+                    .map_err(|e| DeviceStatus::Error(format!("Failed DA mode: {e}")))?;
+
+                if let Some(arc_mutex) = dev.dev_info.as_ref() {
+                    let guard = arc_mutex.lock().await;
+                    self.device_info = Some(DeviceInfo::clone(&guard));
                 }
+                self.device = Some(Arc::new(Mutex::new(dev)));
+                self.status = DeviceStatus::DAReady;
             }
         }
+        Ok(())
     }
 
     async fn set_device_lock_state(&mut self, flag: LockFlag) -> Result<Vec<u8>, String> {
@@ -155,7 +152,7 @@ impl Page for DevicePage {
                             }
                         }
                     }
-                    2 => ctx.current_page_id = crate::app::AppPage::Welcome,
+                    2 => ctx.change_page(AppPage::Welcome),
                     _ => {}
                 }
             }
@@ -248,6 +245,8 @@ impl Page for DevicePage {
     async fn on_exit(&mut self, _ctx: &mut AppCtx) {}
 
     async fn update(&mut self, ctx: &mut AppCtx) {
-        self.poll_device(ctx).await;
+        if let Err(e) = self.poll_device(ctx).await {
+            self.status = e;
+        }
     }
 }

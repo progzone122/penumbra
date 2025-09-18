@@ -15,7 +15,7 @@ use ratatui::crossterm::event::KeyEvent;
 pub trait Page {
     fn render(&mut self, frame: &mut Frame<'_>, ctx: &mut AppCtx);
     async fn handle_input(&mut self, ctx: &mut AppCtx, key: KeyEvent);
-    async fn on_enter(&mut self, ctx: &mut AppCtx) {}
-    async fn on_exit(&mut self, ctx: &mut AppCtx) {}
-    async fn update(&mut self, ctx: &mut AppCtx) {}
+    async fn on_enter(&mut self, _ctx: &mut AppCtx) {}
+    async fn on_exit(&mut self, _ctx: &mut AppCtx) {}
+    async fn update(&mut self, _ctx: &mut AppCtx) {}
 }

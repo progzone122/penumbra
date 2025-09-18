@@ -12,13 +12,13 @@ use std::fs;
 
 // TODO: Make a better logo to replace this placeholder one
 const LOGO: &str = r#"
-  _____                           _               
- |  __ \                         | |              
- | |__) |__ _ __  _   _ _ __ ___ | |__  _ __ __ _ 
+  _____                           _
+ |  __ \                         | |
+ | |__) |__ _ __  _   _ _ __ ___ | |__  _ __ __ _
  |  ___/ _ \ '_ \| | | | '_ ` _ \| '_ \| '__/ _` |
  | |  |  __/ | | | |_| | | | | | | |_) | | | (_| |
  |_|   \___|_| |_|\__,_|_| |_| |_|_.__/|_|  \__,_|
-                                                      
+
 "#;
 
 #[derive(Debug, Clone, Copy)]
@@ -75,15 +75,11 @@ impl Page for WelcomePage {
         f.render_widget(logo, vertical_chunks[0]);
 
         // Loader info (show filename or None)
-        let loader_text = match &ctx.loader {
-            Some(da_file) => {
-                // Use self.loader_name for displaying the name if available, making sure it's a str not String
-                let name = self.loader_name.as_deref().unwrap_or("Unnamed DA");
-                // "Selected Loader: " name
-                format!("Selected Loader: {}", name)
-            }
-            None => "Selected Loader: None".to_string(),
-        };
+        let loader_text = ctx.loader()
+            .as_ref()
+            .map(|_| format!("Selected Loader: {}", self.loader_name.as_deref().unwrap_or("Unnamed DA")))
+            .unwrap_or_else(|| "Selected Loader: None".to_string());
+
         let loader_paragraph = Paragraph::new(loader_text)
             .style(Style::default().fg(Color::Yellow))
             .alignment(Alignment::Center);
@@ -118,7 +114,9 @@ impl Page for WelcomePage {
     async fn handle_input(&mut self, ctx: &mut AppCtx, key: KeyEvent) {
         match &mut self.state {
             WelcomeState::Browsing(explorer) => {
-                explorer.handle(&Event::Key(key));
+                if let Err(err) = explorer.handle(&Event::Key(key)) {
+                    unimplemented!("Error handling unimplemented: {:?}", err);
+                };
 
                 if key.code == KeyCode::Enter {
                     if !explorer.files().is_empty() {
@@ -136,11 +134,15 @@ impl Page for WelcomePage {
                                                 .to_string(),
                                         );
                                         self.state = WelcomeState::Idle;
-                                        ctx.loader = Some(da_file);
+                                        ctx.set_loader(da_file);
                                     }
-                                    Err(err) => {}
+                                    Err(err) => {
+                                        unimplemented!("Error handling unimplemented: {:?}", err);
+                                    }
                                 },
-                                Err(err) => {}
+                                Err(err) => {
+                                    unimplemented!("Error handling unimplemented: {:?}", err);
+                                }
                             }
                         }
                     }
@@ -176,12 +178,8 @@ impl Page for WelcomePage {
                                 }
                             }
                         }
-                        MenuAction::EnterDaMode => {
-                            ctx.current_page_id = AppPage::DevicePage;
-                        }
-                        MenuAction::Quit => {
-                            ctx.exit = true;
-                        }
+                        MenuAction::EnterDaMode => ctx.change_page(AppPage::DevicePage),
+                        MenuAction::Quit => ctx.quit()
                     }
                 }
                 _ => {}
