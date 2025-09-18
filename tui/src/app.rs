@@ -8,21 +8,37 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{DefaultTerminal, Frame};
 use std::{io::Result, time::Duration};
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum AppPage {
     Welcome,
     DevicePage,
 }
 
 pub struct AppCtx {
-    pub loader: Option<DAFile>,
-    pub exit: bool,
-    pub current_page_id: AppPage,
+    loader: Option<DAFile>,
+    exit: bool,
+    current_page_id: AppPage,
+    next_page_id: Option<AppPage>
 }
 
 pub struct App {
     current_page: Box<dyn Page + Send>,
     pub context: AppCtx,
+}
+
+impl AppCtx {
+    pub fn set_loader(&mut self, loader: DAFile) {
+        self.loader = Some(loader);
+    }
+    pub fn loader(&self) -> Option<&DAFile> {
+        self.loader.as_ref()
+    }
+    pub fn change_page(&mut self, page: AppPage) {
+        self.next_page_id = Some(page);
+    }
+    pub fn quit(&mut self) {
+        self.exit = true;
+    }
 }
 
 impl App {
@@ -31,6 +47,7 @@ impl App {
             loader: None,
             exit: false,
             current_page_id: AppPage::Welcome,
+            next_page_id: None,
         };
         App {
             current_page: Box::new(WelcomePage::new()),
@@ -40,26 +57,30 @@ impl App {
 
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         self.current_page.on_enter(&mut self.context).await;
-        let mut previous_page = self.context.current_page_id.clone();
+
         while !self.context.exit {
-            if previous_page != self.context.current_page_id {
-                self.switch_to(self.context.current_page_id.clone()).await;
-                previous_page = self.context.current_page_id.clone();
+            if let Some(next_page) = self.context.next_page_id.take() {
+                self.switch_to(next_page).await;
             }
 
             self.current_page.update(&mut self.context).await;
             terminal.draw(|f: &mut Frame<'_>| self.draw(f))?;
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.code == KeyCode::Delete && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        self.quit();
-                        continue;
-                    }
+            self.handle_events().await?;
+        }
+        Ok(())
+    }
 
-                    self.current_page.handle_input(&mut self.context, key).await;
+    async fn handle_events(&mut self) -> Result<()> {
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                // Force exit: [Ctrl + Delete]
+                if key.code == KeyCode::Delete && key.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    self.context.quit();
                 }
+
+                self.current_page.handle_input(&mut self.context, key).await;
             }
         }
         Ok(())
@@ -69,14 +90,12 @@ impl App {
         self.current_page.render(frame, &mut self.context);
     }
 
-    pub fn quit(&mut self) {
-        self.context.exit = true;
-    }
-
     pub async fn switch_to(&mut self, page: AppPage) {
         self.current_page.on_exit(&mut self.context).await;
 
-        let new_page: Box<dyn Page + Send> = match self.context.current_page_id {
+        self.context.current_page_id = page;
+
+        let new_page: Box<dyn Page + Send> = match page {
             AppPage::Welcome => Box::new(WelcomePage::new()),
             AppPage::DevicePage => Box::new(DevicePage::new()),
         };
