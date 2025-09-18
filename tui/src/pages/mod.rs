@@ -12,15 +12,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::KeyEvent;
 
 // TODO: Make a better logo to replace this placeholder one
-pub const LOGO: &str = r#"
-  _____                           _
- |  __ \                         | |
- | |__) |__ _ __  _   _ _ __ ___ | |__  _ __ __ _
- |  ___/ _ \ '_ \| | | | '_ ` _ \| '_ \| '__/ _` |
- | |  |  __/ | | | |_| | | | | | | |_) | | | (_| |
- |_|   \___|_| |_|\__,_|_| |_| |_|_.__/|_|  \__,_|
-
-"#;
+pub const LOGO: &str = include_str!("../logo.txt");
 
 #[async_trait::async_trait]
 pub trait Page {
