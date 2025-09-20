@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+#
+# SPDX-FileCopyrightText: 2025 Shomy
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 import sys
 import struct
-from typing import List, Dict
+from typing import Dict, List, Optional, Union
 
 # SEJ contants (see https://github.com/shomykohai/penumbra/blob/main/src/core/crypto/sej.rs#L86)
 SEJ_CONSTANTS = [
@@ -60,11 +64,10 @@ def cluster_constants(offsets, max_gap=0x10, min_k=3) -> List[Dict[int, int]]:
     return clusters
 
 
-## TODO: Improve this to find the actual LDR instruction and not the first one it finds
-def find_ldr_addr(data, ref_offset):
+def find_ldr_addr(data, ref_offset, value: Optional[int] = None, reg_to_find: Optional[int] = None) -> Optional[Union[int, int, int]]:
     # Search backwards for the LDR instruction
-    # 0x40 is an arbitrary size that has no special meaning :3
-    for off in range(ref_offset - 2, ref_offset - 0x40, -2):
+    # 0x100 is an arbitrary size that has no special meaning :3
+    for off in range(ref_offset - 2, ref_offset - 0x100, -2):
         instruction = struct.unpack_from("<H", data, off)[0]
         # Some notes so that I don't forget how this works:
         # Let's say we decode 19 49 (taken from Ghidra, lamu da2):
@@ -86,10 +89,40 @@ def find_ldr_addr(data, ref_offset):
             # At least, this makes it show the same values as Ghidra.
             pc = off + 4
             addr = pc + (word_off * 4)
-            found_ldr = struct.unpack_from("<I", data, addr)[0]
-            return found_ldr, off
-    return None, None
+            found_ldr_val = struct.unpack_from("<I", data, addr)[0]
 
+            # 0100100100011001 becomes 01001001, then mask it with 00000111
+            # to get the register (001 = R1) 
+            register = (instruction >> 8) & 0x7
+            if value is not None and found_ldr_val == value:
+                return found_ldr_val, off, register
+            if reg_to_find is not None and register == reg_to_find:
+                return found_ldr_val, off, register
+    return None, None, None
+
+
+def find_str_addr(data, start_off, ldr_reg) -> Optional[Union[int, int, int]]:
+    for off in range(start_off + 2, start_off + 0x100, 2):
+        instruction = struct.unpack_from("<H", data, off)[0]
+        # A minimal STR instructions looks like 01100 00000 000 000
+        # 01100 is STR
+        # 00000 is the offset 
+        # 000 is the dest register
+        # 000 is the source register
+        # so, for example: 0110000000011001
+        # becomes: 01100 00000 011 001
+        # which translates to STR R1, [R3, #0]
+        if (instruction & 0xF800) == 0x6000:
+            src_reg = instruction & 0x7
+            if src_reg == ldr_reg:
+                # Shift 6 bits to remove the registers, then 00011111 mask
+                word_off = (instruction >> 6) & 0x1F
+                dest_reg = (instruction >> 3) & 0x7
+                offset = word_off * 4
+
+                return dest_reg, off, offset
+                
+    return None, None, None
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -124,19 +157,29 @@ if __name__ == "__main__":
     print("="*60)
 
     for idx, cluster in enumerate(clusters):
-        # The sej function I'm using as a reference to finding the sej_base
-        # has as the last LDR address with something like:
-        #   _DAT_1000a00c = 0x10;
-        # So we just find the LDR istruction that loads _DAT_1000a00c to then
-        # remove the last two numbers (0x0c) to get the base.
         ref_offset = min(cluster.values())
-        base_addr, ldr_off = find_ldr_addr(data, ref_offset)
 
-        if base_addr is None:
-            print(f"Could not determine LDR base near cluster {i+1}.")
+        # Get in which register the first SEJ constant is loaded, as well as the offset in the file of
+        # the LDR instruction. 
+        loaded_value, ldr_start_off, dst_reg = find_ldr_addr(data, ref_offset, value=SEJ_CONSTANTS[0])
+        if loaded_value != SEJ_CONSTANTS[0] or loaded_value is None:
+            print("Could not find LDR loading SEJ constant.")
             continue
+        
+        print(f"Cluster {idx + 1}: Found LDR loading SEJ constant 0x{loaded_value:X} at offset 0x{ldr_start_off:X} into R{dst_reg}")
+        str_dest_reg, str_off, offset = find_str_addr(data, ldr_start_off, dst_reg)
+        if str_dest_reg is None:
+            print("Could not find STR base register.")
+            continue
+        
+        print(f"Cluster {idx + 1}: Found STR using base register R{str_dest_reg} at offset 0x{str_off:X} with offset {offset}")
 
-        print(f"Found ldr base address at offset 0x{ldr_off:X}: 0x{base_addr:X}")
+        const_dest_addr, ldr_base_off, _ = find_ldr_addr(data, str_off, reg_to_find=str_dest_reg)
+        if const_dest_addr is None:
+            print("Could not find LDR loading address into STR base register.")
+            continue
+        
+        print(f"Cluster {idx + 1}: Found LDR loading address 0x{const_dest_addr:X} at offset 0x{ldr_base_off:X} into R{str_dest_reg} ")
 
-        aligned_base = base_addr & ~0xFF
+        aligned_base = const_dest_addr & ~0xFF
         print(f"SEJ base: 0x{aligned_base:X}")
