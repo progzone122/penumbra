@@ -18,14 +18,18 @@
       cargoLock = ./Cargo.lock;
       buildInputs = [pkgs.glib pkgs.systemd.dev];
       nativeBuildInputs = [pkgs.pkg-config];
+      pname = "antumbra";
     };
 
-    shells.${system}.default = pkgs.mkShell {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [
+        pkgs.rustfmt
+        pkgs.clippy
+      ];
+
       buildInputs = with pkgs; [
         cargo
         rustc
-        rustfmt
-        clippy
         rust-analyzer
         glib
 
