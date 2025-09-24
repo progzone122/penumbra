@@ -44,3 +44,7 @@ docs/replit.nix
 /dumps
 *.log
 *.pyc
+
+scripts/*.bin
+scripts/*.sig
+scripts/*.img
