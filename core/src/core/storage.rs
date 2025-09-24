@@ -1,4 +1,8 @@
-use std::io::{Cursor, Error, ErrorKind, Read, Result};
+/*
+    SPDX-License-Identifier: AGPL-3.0-or-later
+    SPDX-FileCopyrightText: 2025 Shomy
+*/
+use std::io::{Error, ErrorKind, Result};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

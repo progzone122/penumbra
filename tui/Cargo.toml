@@ -1,11 +1,11 @@
 [package]
-name = "penumbra-tui"
+name = "antumbra"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 ratatui = "0.29.0"
-penumbra = {path = ".." }
+penumbra = {path = "../core" }
 env_logger = "0.11.8"
 crossterm = "0.29.0"
 ratatui-explorer = "0.2.1"
@@ -17,5 +17,5 @@ log = "0.4.28"
 hex = "0.4.3"
 
 [[bin]]
-name = "penumbra-tui"
+name = "antumbra"
 path = "src/main.rs"

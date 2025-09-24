@@ -1,17 +1,5 @@
-[package]
-name = "penumbra"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-aes = "0.8.4"
-async-trait = "0.1.89"
-cbc = "0.1.2"
-cipher = "0.4.4"
-env_logger = "0.11.8"
-hex = "0.4.3"
-log = "0.4.27"
-serialport = "4.7.3"
-sha2 = "0.10.9"
-tokio = {version = "1.47.1", features = ["full"]}
-tokio-serial = "5.4.5"
+[workspace]
+members = [
+    "core",
+    "tui"
+]
