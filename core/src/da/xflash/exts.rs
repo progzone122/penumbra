@@ -34,7 +34,13 @@ pub async fn boot_extensions(xflash: &mut XFlash) -> Result<bool, Error> {
         "Uploading DA extensions to {:08X} ({} bytes)",
         ext_addr, ext_size
     );
-    xflash.boot_to(ext_addr, &ext_data).await?;
+    match xflash.boot_to(ext_addr, &ext_data).await {
+        Ok(_) => {}
+        // If DA extensions fail to upload, we just return false, not a fatal error
+        Err(_) => {
+            return Ok(false);
+        }
+    }
     info!("DA extensions uploaded");
 
     let ack = xflash.devctrl(Cmd::ExtAck, None).await?;

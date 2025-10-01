@@ -504,9 +504,7 @@ impl XFlash {
             return Ok(true);
         }
         info!("Booting DA extensions...");
-        boot_extensions(self).await?;
-
-        self.using_exts = true;
+        self.using_exts = boot_extensions(self).await?;
         Ok(true)
     }
 }
