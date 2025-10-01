@@ -7,5 +7,5 @@ pub mod core;
 pub mod da;
 pub mod exploit;
 
+pub use connection::port::{MTKPort, find_mtk_port};
 pub use core::device::Device;
-pub use connection::{find_mtk_port, get_mtk_port_connection};

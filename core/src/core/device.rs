@@ -1,8 +1,9 @@
 /*
-    SPDX-License-Identifier: AGPL-3.0-or-later
-    SPDX-FileCopyrightText: 2025 Shomy
+SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-FileCopyrightText: 2025 Shomy
 */
-use crate::connection::{Connection, ConnectionType, get_mtk_port_connection};
+use crate::connection::port::MTKPort;
+use crate::connection::{Connection, port::ConnectionType};
 use crate::core::crypto::config::{CryptoConfig, CryptoIO};
 use crate::core::crypto::sej::SEJCrypto;
 use crate::core::seccfg::LockFlag;
@@ -10,7 +11,6 @@ use crate::core::seccfg::SecCfgV4;
 use crate::core::storage::{Partition, StorageType, parse_gpt};
 use crate::da::{DAFile, DAProtocol, DAType, XFlash};
 use log::{error, info, warn};
-use serialport::SerialPortInfo;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -60,16 +60,8 @@ impl<'a> CryptoIO for Device<'a> {
 }
 
 impl<'a> Device<'a> {
-    pub async fn init(mtk_port_info: SerialPortInfo, da_data: Vec<u8>) -> Result<Self, Error> {
-        let mut connection = match get_mtk_port_connection(&mtk_port_info) {
-            Some(conn) => conn,
-            None => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    "Failed to open MTK connection!",
-                ));
-            }
-        };
+    pub async fn init(mtk_port: Box<dyn MTKPort>, da_data: Vec<u8>) -> Result<Self, Error> {
+        let mut connection = Connection::new(mtk_port);
 
         connection.handshake().await?;
 
@@ -135,7 +127,13 @@ impl<'a> Device<'a> {
         }
 
         let protocol = self.protocol.as_mut().unwrap();
-        protocol.upload_da().await?;
+        match protocol.upload_da().await {
+            Ok(_) => info!("Successfully entered DA mode"),
+            Err(e) => {
+                error!("Failed to enter DA mode: {}", e);
+                return Err(e);
+            }
+        }
         protocol.set_connection_type(ConnectionType::Da)?;
 
         // We don't care about progress here ;D

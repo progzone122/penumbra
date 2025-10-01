@@ -93,9 +93,9 @@ where
         ack_hdr[8..12].copy_from_slice(&4u32.to_le_bytes());
         let ack_payload = [0u8; 4];
 
-        xflash.conn.port.write_all(&ack_hdr)?;
-        xflash.conn.port.write_all(&ack_payload)?;
-        xflash.conn.port.flush()?;
+        xflash.conn.port.write_all(&ack_hdr).await?;
+        xflash.conn.port.write_all(&ack_payload).await?;
+        xflash.conn.port.flush().await?;
 
         let status = xflash.get_status().await?;
         debug!("Status after chunk: 0x{:08X}", status);

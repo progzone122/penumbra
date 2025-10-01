@@ -2,7 +2,8 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025 Shomy
 */
-use crate::connection::{Connection, ConnectionType};
+use crate::connection::Connection;
+use crate::connection::port::ConnectionType;
 use tokio::io::Error;
 
 #[async_trait::async_trait]
