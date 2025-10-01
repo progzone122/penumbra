@@ -36,7 +36,7 @@
         systemd.dev
       ];
 
-      nativeBuildInputs = [pkgs.pkg-config];
+      nativeBuildInputs = [pkgs.pkg-config pkgs.libusb1];
 
       env.RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
     };
