@@ -39,6 +39,6 @@ pub trait DAProtocol: Send {
     // fn set_usb_speed(&mut self, speed: u32) -> Result<(), Error>;
 
     // Connection
-    fn get_connection(&self) -> &Connection;
+    fn get_connection(&mut self) -> &mut Connection;
     fn set_connection_type(&mut self, conn_type: ConnectionType) -> Result<(), Error>;
 }

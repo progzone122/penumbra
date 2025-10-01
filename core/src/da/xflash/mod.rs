@@ -286,8 +286,8 @@ impl DAProtocol for XFlash {
         Ok(u32::from_le_bytes(usb_speed[0..4].try_into().unwrap()))
     }
 
-    fn get_connection(&self) -> &Connection {
-        &self.conn
+    fn get_connection(&mut self) -> &mut Connection {
+        &mut self.conn
     }
 
     fn set_connection_type(&mut self, conn_type: ConnectionType) -> Result<(), Error> {

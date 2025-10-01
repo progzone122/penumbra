@@ -236,10 +236,10 @@ impl<'a> Device<'a> {
             .await
     }
 
-    pub fn get_connection(&self) -> Result<&Connection, std::io::Error> {
-        if let Some(conn) = &self.connection {
+    pub fn get_connection(&mut self) -> Result<&mut Connection, std::io::Error> {
+        if let Some(conn) = &mut self.connection {
             Ok(conn)
-        } else if let Some(protocol) = &self.protocol {
+        } else if let Some(protocol) = &mut self.protocol {
             Ok(protocol.get_connection())
         } else {
             Err(std::io::Error::new(
