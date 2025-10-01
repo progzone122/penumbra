@@ -44,6 +44,9 @@ impl DAProtocol for XFlash {
             None => return Err(Error::new(ErrorKind::NotFound, "DA2 region not found")),
         };
         let da2addr = da2.addr;
+        let da2sig_len = da2.sig_len as usize;
+
+        let da2_original_data = da2.data[..da2.data.len().saturating_sub(da2sig_len)].to_vec();
 
         // TODO: Patch DA2 with Carbonara
         let carbonara_da = Arc::new(Mutex::new(self.da.clone()));
@@ -52,9 +55,9 @@ impl DAProtocol for XFlash {
         let da2data = match carbonara.run(self).await {
             Ok(_) => match carbonara.get_patched_da2() {
                 Some(patched_da2) => patched_da2.data.clone(),
-                None => da2.data,
+                None => da2_original_data,
             },
-            Err(_) => da2.data,
+            Err(_) => da2_original_data,
         };
 
         match self.boot_to(da2addr, &da2data).await {
