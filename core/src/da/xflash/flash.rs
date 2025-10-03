@@ -220,12 +220,13 @@ where
         // And that's why here instead of doing the usual of sending the header (checksum included)
         // then the data, we need to send three different parts, with one being all zeros (why???).
         // But alas, who am I to judge, at least they didn't make an XML protocol... right?
-        debug!("Sending first incoherent part of this chunk ({})...", pos);
-        xflash.send(0u32, DataType::ProtocolFlow as u32).await?;
+        xflash
+            .send(&0u32.to_be_bytes(), DataType::ProtocolFlow as u32)
+            .await?;
 
         debug!("Sending checksum {} for chunk {}", checksum, pos);
         xflash
-            .send(checksum as u32, DataType::ProtocolFlow as u32)
+            .send(&checksum.to_le_bytes(), DataType::ProtocolFlow as u32)
             .await?;
 
         debug!("Sending chunk of {} bytes", chunk.len());
@@ -251,6 +252,74 @@ where
     }
 
     info!("Flash write completed, {} bytes written.", bytes_written);
+
+    Ok(())
+}
+
+pub async fn download(xflash: &mut XFlash, part_name: String, data: &[u8]) -> Result<(), Error> {
+    // Works like write_flash, but instead of address and size, it takes a partition name
+    // and writes the whole data to it.
+    // The main difference betwen write_flash and this function is that this one
+    // relies on the DA to find the partition by name.
+    // Also, this command doesn't support writing only a part of the partition,
+    // it will always write the whole partition with the data provided.
+
+    // let chunk_size = get_write_packet_length(xflash).await?;
+
+    xflash.send_cmd(Cmd::Download).await?;
+    let status = xflash.get_status().await?;
+    if status != 0 {
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!("Device returned error status: {:#X}", status),
+        ));
+    }
+
+    let data_len = data.len();
+
+    xflash
+        .send(part_name.as_bytes(), DataType::ProtocolFlow as u32)
+        .await?;
+
+    xflash
+        .send(&data_len.to_le_bytes()[..], DataType::ProtocolFlow as u32)
+        .await?;
+
+    let status = xflash.get_status().await?;
+    if status != 0 {
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!(
+                "Device returned error status after sending parameters: {:#X}",
+                status
+            ),
+        ));
+    }
+
+    // TODO: Figure out what this is actually? The same happens in write_flash
+    xflash
+        .send(&0u32.to_le_bytes(), DataType::ProtocolFlow as u32)
+        .await?;
+
+    let checksum = data.iter().fold(0u32, |total, &byte| total + byte as u32) & 0xFFFF;
+    xflash
+        .send(&checksum.to_le_bytes(), DataType::ProtocolFlow as u32)
+        .await?;
+
+    xflash.send(data, DataType::ProtocolFlow as u32).await?;
+
+    debug!("Upload completed, {} bytes sent.", data_len);
+
+    let status = xflash.get_status().await?;
+    if status != 0 {
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!(
+                "Device returned error status after data upload: {:#X}",
+                status
+            ),
+        ));
+    }
 
     Ok(())
 }

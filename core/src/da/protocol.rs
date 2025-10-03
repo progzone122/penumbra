@@ -11,7 +11,7 @@ pub trait DAProtocol: Send {
     // Main helpers
     async fn upload_da(&mut self) -> Result<bool, Error>;
     async fn boot_to(&mut self, addr: u32, data: &[u8]) -> Result<bool, Error>;
-    async fn send(&mut self, data: u32, datatype: u32) -> Result<bool, Error>;
+    async fn send(&mut self, data: &[u8], datatype: u32) -> Result<bool, Error>;
     async fn send_data(&mut self, data: &[u8]) -> Result<bool, Error>;
     async fn get_status(&mut self) -> Result<u32, Error>;
     // FLASH operations
@@ -30,6 +30,8 @@ pub trait DAProtocol: Send {
         data: &[u8],
         progress: &mut (dyn FnMut(usize, usize) + Send),
     ) -> Result<(), Error>;
+
+    async fn download(&mut self, part_name: String, data: &[u8]) -> Result<(), Error>;
 
     // Memory
     async fn read32(&mut self, addr: u32) -> Result<u32, Error>;

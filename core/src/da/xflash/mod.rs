@@ -237,20 +237,25 @@ impl DAProtocol for XFlash {
         Ok(status)
     }
 
-    async fn send(&mut self, data: u32, datatype: u32) -> Result<bool, Error> {
-        let data_bytes = data.to_le_bytes();
-
+    async fn send(&mut self, data: &[u8], datatype: u32) -> Result<bool, Error> {
         let mut hdr = [0u8; 12];
 
-        // efeeeefe | 010000000 | 04000000
+        // efeeeefe | 010000000 | 04000000 (Data Length)
         hdr[0..4].copy_from_slice(&(Cmd::Magic as u32).to_le_bytes());
         hdr[4..8].copy_from_slice(&(datatype as u32).to_le_bytes());
-        hdr[8..12].copy_from_slice(&4u32.to_le_bytes());
+        hdr[8..12].copy_from_slice(&(data.len() as u32).to_le_bytes());
 
-        debug!("[TX] Header: {:02X?}, Payload: 0x{:08X}", hdr, data);
+        debug!(
+            "[TX] Header: {:02X?}, Payload: [{}]",
+            hdr,
+            data.iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
 
         self.conn.port.write_all(&hdr).await?;
-        self.conn.port.write_all(&data_bytes).await?;
+        self.conn.port.write_all(&data).await?;
 
         self.conn.port.flush().await?;
 
@@ -274,6 +279,10 @@ impl DAProtocol for XFlash {
         progress: &mut (dyn FnMut(usize, usize) + Send),
     ) -> Result<(), Error> {
         flash::write_flash(self, addr, size, data, progress).await
+    }
+
+    async fn download(&mut self, part_name: String, data: &[u8]) -> Result<(), Error> {
+        flash::download(self, part_name, data).await
     }
 
     async fn get_usb_speed(&mut self) -> Result<u32, Error> {
@@ -333,7 +342,9 @@ impl DAProtocol for XFlash {
 
 impl XFlash {
     async fn send_cmd(&mut self, cmd: Cmd) -> Result<bool, Error> {
-        self.send(cmd as u32, DataType::ProtocolFlow as u32).await
+        let cmd_bytes = (cmd as u32).to_le_bytes();
+        self.send(&cmd_bytes[..], DataType::ProtocolFlow as u32)
+            .await
     }
 
     pub fn new(conn: Connection, da: DA, dev_info: Arc<Mutex<DeviceInfo>>) -> Self {
