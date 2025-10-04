@@ -3,7 +3,7 @@
     SPDX-FileCopyrightText: 2025 Shomy
 */
 use crate::connection::port::{ConnectionType, KNOWN_PORTS, MTKPort};
-use log::{error, info};
+use log::{debug, error, info};
 use rusb::{Context, Device, DeviceHandle, GlobalContext, UsbContext};
 use rusb::{Direction, Recipient, RequestType};
 use std::sync::Arc;
@@ -245,7 +245,7 @@ impl MTKPort for UsbMTKPort {
         #[cfg(target_os = "windows")]
         {
             if let Err(e) = self.setup_cdc().await {
-                debug!("Windows CDC Setup failed!!", e);
+                debug!("Windows CDC Setup failed!!");
             }
         }
 
