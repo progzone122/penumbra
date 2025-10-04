@@ -50,7 +50,7 @@ impl App {
             next_page_id: None,
         };
         App {
-            current_page: Box::new(WelcomePage::new()),
+            current_page: Box::new(WelcomePage::default()),
             context,
         }
     }
@@ -96,7 +96,7 @@ impl App {
         self.context.current_page_id = page;
 
         let new_page: Box<dyn Page + Send> = match page {
-            AppPage::Welcome => Box::new(WelcomePage::new()),
+            AppPage::Welcome => Box::new(WelcomePage::default()),
             AppPage::DevicePage => Box::new(DevicePage::new()),
         };
 

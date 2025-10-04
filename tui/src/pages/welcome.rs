@@ -8,7 +8,7 @@ use penumbra::da::DAFile;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 use ratatui_explorer::{FileExplorer, Theme};
-use std::fs;
+use std::{fs};
 
 use super::LOGO;
 
@@ -25,25 +25,18 @@ const MENU_ITEMS: &[(MenuAction, &str)] = &[
     (MenuAction::Quit, "Quit"),
 ];
 
+#[derive(Default)]
 enum WelcomeState {
+    #[default]
     Idle,
     Browsing(FileExplorer),
 }
 
+#[derive(Default)]
 pub struct WelcomePage {
     state: WelcomeState,
     selected_idx: usize,
     loader_name: Option<String>,
-}
-
-impl WelcomePage {
-    pub fn new() -> Self {
-        Self {
-            state: WelcomeState::Idle,
-            selected_idx: 0,
-            loader_name: None,
-        }
-    }
 }
 
 #[async_trait::async_trait]
