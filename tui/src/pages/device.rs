@@ -15,6 +15,8 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
+use strum_macros::{AsRefStr, EnumIter};
+use strum::IntoEnumIterator;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -28,9 +30,19 @@ enum DeviceStatus {
     Error(String),
 }
 
+#[derive(EnumIter, AsRefStr, Debug, Clone, Copy)]
+enum DeviceAction {
+    #[strum(serialize = "Unlock Bootloader")]
+    UnlockBootloader,
+    #[strum(serialize = "Lock Bootloader")]
+    LockBootloader,
+    #[strum(serialize = "Back to Menu")]
+    BackToMenu,
+}
+
 pub struct DevicePage {
     actions_state: ListState,
-    actions: Vec<String>,
+    actions: Vec<DeviceAction>,
     device: Option<Arc<Mutex<Device<'static>>>>,
     status: DeviceStatus,
     status_message: Option<(String, Style)>,
@@ -44,11 +56,7 @@ impl DevicePage {
         actions_state.select(Some(0));
         Self {
             actions_state,
-            actions: vec![
-                "Unlock Bootloader".to_string(),
-                "Lock Bootloader".to_string(),
-                "Back to Menu".to_string(),
-            ],
+            actions: DeviceAction::iter().collect(),
             device: None,
             status: DeviceStatus::default(),
             status_message: None,
@@ -224,7 +232,7 @@ impl Page for DevicePage {
         let actions = self
             .actions
             .iter()
-            .map(|action| ListItem::new(action.clone()))
+            .map(|action| ListItem::new(action.as_ref()))
             .collect::<Vec<_>>();
 
         frame.render_stateful_widget(
