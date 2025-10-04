@@ -8,12 +8,14 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{DefaultTerminal, Frame};
 use std::{io::Result, time::Duration};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Default)]
 pub enum AppPage {
+    #[default]
     Welcome,
     DevicePage,
 }
 
+#[derive(Default)]
 pub struct AppCtx {
     loader: Option<DAFile>,
     exit: bool,
@@ -43,15 +45,9 @@ impl AppCtx {
 
 impl App {
     pub fn new() -> App {
-        let context = AppCtx {
-            loader: None,
-            exit: false,
-            current_page_id: AppPage::Welcome,
-            next_page_id: None,
-        };
         App {
             current_page: Box::new(WelcomePage::default()),
-            context,
+            context: AppCtx::default()
         }
     }
 
