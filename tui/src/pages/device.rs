@@ -64,16 +64,17 @@ impl DevicePage {
             && self.last_poll.elapsed() > Duration::from_millis(500)
         {
             self.last_poll = Instant::now();
-            let ports = find_mtk_port();
-            if !ports.is_empty() {
+            let ports = find_mtk_port().await;
+            if let Some(port) = ports {
                 self.status = DeviceStatus::Initializing;
 
-                let da_data: Vec<u8> = ctx.loader()
+                let da_data: Vec<u8> = ctx
+                    .loader()
                     .map(|loader| loader.da_raw_data.as_slice())
                     .ok_or_else(|| DeviceStatus::Error("No DA loader in context".to_string()))?
                     .to_vec();
 
-                let mut dev = Device::init(ports[0].clone(), da_data)
+                let mut dev = Device::init(port, da_data)
                     .await
                     .map_err(|e| DeviceStatus::Error(format!("Device init failed: {e}")))?;
 
