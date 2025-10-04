@@ -19,8 +19,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 enum DeviceStatus {
+    #[default]
     WaitingForDevice,
     Initializing,
     DAReady,
@@ -49,7 +50,7 @@ impl DevicePage {
                 "Back to Menu".to_string(),
             ],
             device: None,
-            status: DeviceStatus::WaitingForDevice,
+            status: DeviceStatus::default(),
             status_message: None,
             last_poll: Instant::now(),
             device_info: None,
