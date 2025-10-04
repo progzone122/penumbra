@@ -46,7 +46,7 @@ impl AppCtx {
 impl App {
     pub fn new() -> App {
         App {
-            current_page: Box::new(WelcomePage::default()),
+            current_page: Box::new(WelcomePage::new()),
             context: AppCtx::default()
         }
     }
@@ -92,7 +92,7 @@ impl App {
         self.context.current_page_id = page;
 
         let new_page: Box<dyn Page + Send> = match page {
-            AppPage::Welcome => Box::new(WelcomePage::default()),
+            AppPage::Welcome => Box::new(WelcomePage::new()),
             AppPage::DevicePage => Box::new(DevicePage::new()),
         };
 

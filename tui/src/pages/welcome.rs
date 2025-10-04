@@ -8,22 +8,20 @@ use penumbra::da::DAFile;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 use ratatui_explorer::{FileExplorer, Theme};
+use strum::IntoEnumIterator;
+use strum_macros::{AsRefStr, EnumIter};
 use std::{fs};
 
 use super::LOGO;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(EnumIter, AsRefStr, Debug, Clone, Copy)]
 enum MenuAction {
+    #[strum(serialize = "Select DA")]
     SelectDa,
+    #[strum(serialize = "Enter DA Mode")]
     EnterDaMode,
     Quit,
 }
-
-const MENU_ITEMS: &[(MenuAction, &str)] = &[
-    (MenuAction::SelectDa, "Select DA"),
-    (MenuAction::EnterDaMode, "Enter DA Mode"),
-    (MenuAction::Quit, "Quit"),
-];
 
 #[derive(Default)]
 enum WelcomeState {
@@ -35,8 +33,20 @@ enum WelcomeState {
 #[derive(Default)]
 pub struct WelcomePage {
     state: WelcomeState,
+    actions: Vec<MenuAction>,
     selected_idx: usize,
     loader_name: Option<String>,
+}
+
+impl WelcomePage {
+    pub fn new() -> Self {
+        let actions: Vec<MenuAction> = MenuAction::iter().collect();
+
+        Self {
+            actions,
+            ..Default::default()
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -77,9 +87,9 @@ impl Page for WelcomePage {
 
         // Menu
         let block = Block::default().title("Menu").borders(Borders::ALL);
-        let items: Vec<ListItem> = MENU_ITEMS
+        let items: Vec<ListItem> = self.actions
             .iter()
-            .map(|&(_, label)| ListItem::new(label))
+            .map(|action| ListItem::new(action.as_ref()))
             .collect();
         let mut list_state = ListState::default();
         list_state.select(Some(self.selected_idx));
@@ -144,12 +154,12 @@ impl Page for WelcomePage {
                     }
                 }
                 KeyCode::Down => {
-                    if self.selected_idx < MENU_ITEMS.len() - 1 {
+                    if self.selected_idx < self.actions.len() - 1 {
                         self.selected_idx += 1;
                     }
                 }
                 KeyCode::Enter => {
-                    let action = MENU_ITEMS[self.selected_idx].0;
+                    let action = self.actions[self.selected_idx];
                     match action {
                         MenuAction::SelectDa => {
                             let theme = Theme::default().add_default_title();
