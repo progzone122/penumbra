@@ -15,6 +15,33 @@ A Download Agent operates under three different protocols (ordered from oldest t
 * [[XFlash DA Protocol|XFlash (V5)]]
 * [[XML DA Protocol|XML (V6)]] 
 
+
+## Download Agent stages
+
+A DA file contains two stages: DA1 and DA2.
+
+### DA1
+
+The first stage (DA1) is responsible to initializing the platform and environment for allowing then to boot the second stage.
+DA1 (on secure chips) is bound to DAA (Download Agent Authorization) to allow to continue.
+The Preloader will verify the signature of the first stage against the Public Key. If DAA doesn't pass, the first stage won't be loaded and an assertion will happen.
+
+Exploits like [[Kamakiri]] allows to temporarily disable phone security protections (SLA, DAA and SBC) to be able to load an arbitrary patched DA1.
+
+After the first stage is loaded, only some commands are available, most notably `cmd_boot_to`, which is used to load the second stage (DA2).
+The `boot_to` cmd includes some protections, like hash and secure boot checks for allowing the incoming second stage to load.
+
+[[Carbonara]] abuses a flawed implementation of this cmd to overwrite the DA2 hash contained in DA1, disrupting this way the whole root of trust and allowing to load an arbitrary payload.
+
+### DA2
+
+The second stage (DA2) is what's responsible to use the full suite of commands, such as writing, reading and formatting partitions, writing efuses, read and write RPMB (before 2024).
+
+DA2 can optionally implement `DA SLA`, a form of authentication similar to Preloader / Brom SLA, that (if present) needs to be completed before being able to execute any command.
+
+Before some still unknown time in 2024, DA2 also implemented the `boot_to` cmd, which allowed [[DA Extensions]] to be arbitrary loaded with a patched second stage.
+
+
 ## Download Agent Structure
 
 ![[da_v5.png]]
