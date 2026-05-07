@@ -2,6 +2,7 @@
     SPDX-License-Identifier: AGPL-3.0-or-later
     SPDX-FileCopyrightText: 2025-2026 Shomy
 */
+use penumbra::StorageKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,10 +23,10 @@ use ratatui::prelude::{Alignment, Frame};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Row, Table};
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
 use strum::IntoEnumIterator;
 use strum_macros::{AsRefStr, EnumIter};
-use tokio::fs::File;
-use tokio::io::{BufReader, BufWriter};
 use tokio::spawn;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
@@ -33,18 +34,10 @@ use tokio::time::{Duration, sleep};
 
 use crate::app::{AppCtx, AppPage};
 use crate::components::selectable_list::{
-    ListItemEntry,
-    ListItemEntryBuilder,
-    SelectableList,
-    SelectableListBuilder,
+    ListItemEntry, ListItemEntryBuilder, SelectableList, SelectableListBuilder,
 };
 use crate::components::{
-    ExplorerResult,
-    FileExplorer,
-    ProgressBar,
-    Stars,
-    ThemedWidgetMut,
-    ThemedWidgetRef,
+    ExplorerResult, FileExplorer, ProgressBar, Stars, ThemedWidgetMut, ThemedWidgetRef,
 };
 use crate::pages::Page;
 
@@ -198,7 +191,7 @@ pub struct DevicePage {
     // Various Device Info
     pub partitions: Vec<Partition>,
     pub devinfo: Option<DevInfoData>,
-    pub storage: Option<Arc<dyn Storage + Send + Sync>>,
+    pub storage: Option<StorageKind>,
 }
 
 impl DevicePage {
@@ -332,9 +325,9 @@ impl DevicePage {
                     self.device_state.set_status(status);
                 }
                 DeviceEvent::Connected(mut device) => {
-                    self.devinfo = Some(device.dev_info.get_data().await);
+                    self.devinfo = Some(device.dev_info.get_data());
 
-                    let partitions = device.get_partitions().await;
+                    let partitions = device.get_partitions();
                     let partition_list_items: Vec<ListItemEntry> = partitions
                         .iter()
                         .map(|p| {
@@ -352,7 +345,7 @@ impl DevicePage {
                     self.partition_list.items = partition_list_items;
 
                     self.partitions = partitions;
-                    self.storage = device.dev_info.storage().await.clone();
+                    self.storage = device.dev_info.storage().clone();
                     self.device = Some(Arc::new(Mutex::new(device)));
                     self.device_state.set_status(DeviceStatus::Connected);
                 }
@@ -409,7 +402,7 @@ impl DevicePage {
 
         spawn(async move {
             let port = loop {
-                match find_mtk_port().await {
+                match find_mtk_port() {
                     Some(p) => break p,
                     None => sleep(Duration::from_millis(700)).await,
                 }
@@ -427,14 +420,14 @@ impl DevicePage {
 
             match devbuilder.build() {
                 Ok(mut dev) => {
-                    if let Err(e) = dev.init().await {
+                    if let Err(e) = dev.init() {
                         let _ = tx.send(DeviceEvent::Error(format!("Init failed: {}", e))).await;
                         let _ =
                             tx.send(DeviceEvent::StatusChanged(DeviceStatus::Disconnected)).await;
                         return;
                     }
 
-                    if let Err(e) = dev.enter_da_mode().await {
+                    if let Err(e) = dev.enter_da_mode() {
                         let _ = tx.send(DeviceEvent::Error(format!("DA Mode failed: {}", e))).await;
                         let _ =
                             tx.send(DeviceEvent::StatusChanged(DeviceStatus::Disconnected)).await;
@@ -802,7 +795,7 @@ impl DeviceActionCallback for UnlockBootloaderCallback {
         let _ = event_tx.send(DeviceEvent::HeaderStatus("Unlocking bootloader...".into())).await;
 
         let mut dev = device.lock().await;
-        match dev.set_seccfg_lock_state(LockFlag::Unlock).await {
+        match dev.set_seccfg_lock_state(LockFlag::Unlock) {
             Some(_) => {
                 let _ =
                     event_tx.send(DeviceEvent::HeaderStatus("Bootloader unlocked.".into())).await;
@@ -826,7 +819,7 @@ impl DeviceActionCallback for LockBootloaderCallback {
         event_tx.send(DeviceEvent::HeaderStatus("Locking bootloader...".into())).await.ok();
 
         let mut dev = device.lock().await;
-        match dev.set_seccfg_lock_state(LockFlag::Unlock).await {
+        match dev.set_seccfg_lock_state(LockFlag::Unlock) {
             Some(_) => {
                 event_tx.send(DeviceEvent::HeaderStatus("Bootloader locked.".into())).await.ok();
                 Ok(())
@@ -891,7 +884,7 @@ impl DeviceActionCallback for ReadPartitionCallback {
             .ok();
         for partition in partitions {
             let output_path = output_dir.join(format!("{}.bin", partition.name));
-            let file = File::create(&output_path).await?;
+            let file = File::create(&output_path)?;
             let mut writer = BufWriter::new(file);
 
             let mut progress_cb = |written: usize, _total_partition_bytes: usize| {
@@ -909,7 +902,7 @@ impl DeviceActionCallback for ReadPartitionCallback {
                 });
             };
 
-            dev.upload(&partition.name, &mut writer, &mut progress_cb).await?;
+            dev.upload(&partition.name, &mut writer, &mut progress_cb)?;
 
             bytes_read += partition.size as u64;
         }
@@ -1004,7 +997,7 @@ impl DeviceActionCallback for WritePartitionCallback {
             .ok();
 
         for (partition, path) in part_to_write {
-            let file = File::open(path).await?;
+            let file = File::open(path)?;
             let mut reader = BufReader::new(file);
 
             let mut progress_cb = |written: usize, _total_partition_bytes: usize| {
@@ -1022,7 +1015,7 @@ impl DeviceActionCallback for WritePartitionCallback {
                 });
             };
 
-            dev.download(&partition.name, partition.size, &mut reader, &mut progress_cb).await?;
+            dev.download(&partition.name, partition.size, &mut reader, &mut progress_cb)?;
 
             bytes_written += partition.size as u64;
         }
