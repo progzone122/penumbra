@@ -40,7 +40,7 @@ On Arch Linux, you can install Antumbra with the provided PKGBUILD in the repo.
 
 ```sh
 $ git clone https://github.com/shomykohai/penumbra.git
-$ cd penumbra/tui/res/arch
+$ cd penumbra/app/res/arch
 $ makepkg -si
 ```
 

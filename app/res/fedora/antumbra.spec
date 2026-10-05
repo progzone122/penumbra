@@ -22,7 +22,7 @@ and flashing MediaTek based devices.
 %prep
 %autosetup -c
 
-test -d vendor || { echo "vendor/ missing -- see tui/res/fedora/README.md" >&2; exit 1; }
+test -d vendor || { echo "vendor/ missing -- see app/res/fedora/README.md" >&2; exit 1; }
 
 %build
 # Nightly features :)

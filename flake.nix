@@ -31,7 +31,7 @@
       pname = "antumbra";
 
       postInstall = ''
-        install -Dm644 tui/res/common/icon.svg $out/share/icons/hicolor/scalable/apps/antumbra.svg
+        install -Dm644 app/res/common/icon.svg $out/share/icons/hicolor/scalable/apps/antumbra.svg
       '';
 
       desktopItems = [
