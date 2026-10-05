@@ -3,9 +3,9 @@ resolver = "3"
 members = [
     "core",
     "core/penumbra-macros",
-    "tui"
+    "app"
 ]
-default-members = ["tui"]
+default-members = ["app"]
 
 [workspace.package]
 edition = "2024"
