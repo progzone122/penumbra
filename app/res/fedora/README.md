@@ -9,10 +9,10 @@ $ git clone https://github.com/shomykohai/penumbra.git
 $ cd penumbra
 $ mkdir -p .cargo
 $ cargo vendor --locked --versioned-dirs vendor > .cargo/config.toml
-$ version=$(grep -m1 '^version' tui/Cargo.toml | cut -d'"' -f2)
+$ version=$(grep -m1 '^version' app/Cargo.toml | cut -d'"' -f2)
 $ mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 $ tar -czf ~/rpmbuild/SOURCES/antumbra-$version-vendored.tar.gz --anchored --exclude=./.git --exclude=./target .
-$ cp tui/res/fedora/antumbra.spec ~/rpmbuild/SPECS/
+$ cp app/res/fedora/antumbra.spec ~/rpmbuild/SPECS/
 $ rpmbuild -bb --define "_ver $version" ~/rpmbuild/SPECS/antumbra.spec
 $ sudo dnf install ~/rpmbuild/RPMS/$(uname -m)/antumbra-$version-*.rpm
 ```
@@ -25,10 +25,10 @@ $ git clone https://github.com/shomykohai/penumbra.git
 $ cd penumbra
 $ mkdir -p .cargo
 $ cargo vendor --locked --versioned-dirs vendor > .cargo/config.toml
-$ version=$(grep -m1 '^version' tui/Cargo.toml | cut -d'"' -f2)
+$ version=$(grep -m1 '^version' app/Cargo.toml | cut -d'"' -f2)
 $ mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 $ tar -czf ~/rpmbuild/SOURCES/antumbra-$version-vendored.tar.gz --anchored --exclude=./.git --exclude=./target .
-$ cp tui/res/fedora/antumbra.spec ~/rpmbuild/SPECS/
+$ cp app/res/fedora/antumbra.spec ~/rpmbuild/SPECS/
 $ rpmbuild -bb --define "_ver $version" ~/rpmbuild/SPECS/antumbra.spec
 $ sudo urpmi ~/rpmbuild/RPMS/$(uname -m)/antumbra-$version-*.rpm
 ```
