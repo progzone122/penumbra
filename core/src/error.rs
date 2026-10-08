@@ -57,6 +57,8 @@ pub enum Error {
     InvalidUtf8,
     #[error("Invalid UTF-16 string")]
     InvalidUtf16,
+    #[error(transparent)]
+    PayloadError(#[from] PayloadError),
 }
 
 impl Error {
@@ -623,4 +625,12 @@ impl BrPlError {
         let kind = BrPlErrorKind::try_from(code).unwrap_or(BrPlErrorKind::Unknown);
         Self { kind, code }
     }
+}
+
+#[derive(Debug, Error)]
+pub enum PayloadError {
+    #[error("Data too short to contain a valid v6 header")]
+    V6ShortData,
+    #[error("Invalid v6 payload magic")]
+    V6InvalidMagic,
 }

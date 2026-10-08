@@ -52,7 +52,7 @@ pub fn patch_boot_to(
         return Ok(true);
     }
 
-    let mut extloader = get_v6_payload(EXTLOADER, is_arm64).to_vec();
+    let mut extloader = get_v6_payload(EXTLOADER, is_arm64)?.to_vec();
 
     let Some(download_function_off) = analyzer.find_function_from_string("Download host file:%s")
     else {

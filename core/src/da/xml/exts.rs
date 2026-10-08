@@ -174,7 +174,7 @@ fn prepare_extensions(xml: &Xml) -> Option<Vec<u8>> {
     let da2data = &xml.da.get_da2()?.data;
 
     let is_arm64 = xml.da.is_arm64();
-    let mut da_ext_data = get_v6_payload(DA_EXT, is_arm64).to_vec();
+    let mut da_ext_data = get_v6_payload(DA_EXT, is_arm64).ok()?.to_vec();
 
     let analyzer = create_analyzer(da2data.clone(), da2address as u64, to_arch(is_arm64));
 
