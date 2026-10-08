@@ -509,7 +509,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn get_storage(&mut self) -> Option<StorageKind> {
         self.ensure_da_mode().ok()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut()?;
         protocol.get_storage(&mut self.port).cloned()
     }
 
@@ -694,7 +694,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
             .get_partition(name)
             .ok_or_else(|| PenumbraError::PartitionNotFound(name.into()))?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.read_flash(&mut self.port, part.address, part.size, part.kind, writer, progress)
     }
 
@@ -730,7 +730,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
             .get_partition(name)
             .ok_or_else(|| PenumbraError::PartitionNotFound(name.into()))?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.write_flash(&mut self.port, part.address, part.size, part.kind, reader, progress)
     }
 
@@ -770,7 +770,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
             .get_partition(name)
             .ok_or_else(|| PenumbraError::PartitionNotFound(name.into()))?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.erase_flash(&mut self.port, part.address, part.size, part.kind, progress)
     }
 
@@ -822,7 +822,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.read_flash(&mut self.port, address, size, section, writer, progress)
     }
 
@@ -875,7 +875,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.write_flash(&mut self.port, address, size, section, reader, progress)
     }
 
@@ -917,7 +917,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.erase_flash(&mut self.port, address, size, section, progress)
     }
 
@@ -969,7 +969,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.write_partition(&mut self.port, partition, size, reader, progress)
     }
 
@@ -1013,7 +1013,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.read_partition(&mut self.port, partition, writer, progress)
     }
 
@@ -1047,7 +1047,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.format_partition(&mut self.port, partition, progress)
     }
 
@@ -1105,7 +1105,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.flash_scatter(&mut self.port, scatter, reader_source, writer_sink, progress)
     }
 
@@ -1125,7 +1125,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn shutdown(&mut self) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.shutdown(&mut self.port)
     }
 
@@ -1146,7 +1146,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn reboot(&mut self, bootmode: BootMode) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.reboot(&mut self.port, bootmode)
     }
 
@@ -1169,7 +1169,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn read_efuses<W: Writer>(&mut self, writer: W) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.read_efuses(&mut self.port, writer)
     }
 
@@ -1194,7 +1194,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn write_efuses<R: Reader>(&mut self, reader: R, size: u64) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.write_efuses(&mut self.port, reader, size)
     }
 }
@@ -1220,7 +1220,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn set_seccfg_lock_state(&mut self, state: LockState) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.set_seccfg_lock_state(&mut self.port, state)
     }
 
@@ -1245,7 +1245,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn set_rpmb_lock_state(&mut self, state: LockState) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.set_rpmb_lock_state(&mut self.port, state)
     }
 
@@ -1274,7 +1274,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.peek(&mut self.port, addr, size, writer, progress)
     }
 
@@ -1303,7 +1303,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.poke(&mut self.port, addr, size, reader, progress)
     }
 
@@ -1325,7 +1325,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn read_register(&mut self, addr: u64) -> Result<u32> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.read_register(&mut self.port, addr)
     }
 
@@ -1346,7 +1346,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn write_register(&mut self, addr: u64, value: u32) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.write_register(&mut self.port, addr, value)
     }
 
@@ -1384,7 +1384,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.read_rpmb(&mut self.port, region, start_sector, sectors_count, writer, progress)
     }
 
@@ -1420,7 +1420,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.write_rpmb(&mut self.port, region, start_sector, sectors_count, reader, progress)
     }
 
@@ -1453,7 +1453,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.erase_rpmb(&mut self.port, region, start_sector, sectors_count, progress)
     }
 
@@ -1483,7 +1483,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn auth_rpmb(&mut self, region: crate::storage::RpmbRegion, key: &[u8]) -> Result<()> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.auth_rpmb(&mut self.port, region, key)
     }
 
@@ -1526,7 +1526,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
         protocol.sej_aes(&mut self.port, params, reader, writer)
     }
 
@@ -1551,7 +1551,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     pub fn derive_key_by_id(&mut self, id: KeyDeriveId, len: KeySize) -> Result<Vec<u8>> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
 
         let params = extensions::KeyDeriveParams::Id { id, len };
         protocol.derive_key(&mut self.port, params)
@@ -1585,7 +1585,7 @@ impl<'a, P: MtkPort> Device<'a, P> {
     ) -> Result<Vec<u8>> {
         self.ensure_da_mode()?;
 
-        let protocol = self.protocol.as_mut().unwrap();
+        let protocol = self.protocol.as_mut().ok_or(PenumbraError::ProtocolNotInitialized)?;
 
         let params = extensions::KeyDeriveParams::Input { label, salt, len };
         protocol.derive_key(&mut self.port, params)
