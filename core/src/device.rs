@@ -512,7 +512,9 @@ impl<'a, P: MtkPort> Device<'a, P> {
         F: FnOnce(&mut DaProtocol<'a>, &mut P) -> Result<R>,
     {
         self.ensure_da_mode()?;
-        self.with_protocol(f)
+        let proto = self.protocol.as_mut().unwrap();
+
+        f(proto, &mut self.port)
     }
 
     /// Retrieves info about the device storage.
